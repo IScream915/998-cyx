@@ -116,6 +116,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ZeroMQ JSON 订阅服务")
     parser.add_argument("--endpoint", default="tcp://localhost:5051", help="订阅地址")
     parser.add_argument("--topic", default="Frame", help="订阅 topic，默认 Frame")
+    parser.add_argument("--publish_bind", default="tcp://*:5052", help="发布地址，供 moduleE 订阅")
+    parser.add_argument("--publish_topic", default="Frame", help="发布 topic，默认 Frame")
     parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
     parser.add_argument("--reconnect_delay", type=float, default=1.0, help="重连等待(秒)")
     parser.add_argument("--checkpoint", type=str, default="outputs/best_model.pth", help="模型检查点路径")
@@ -164,6 +166,10 @@ def main() -> None:
         recv_timeout_ms=args.timeout_ms,
         reconnect_delay_sec=args.reconnect_delay,
     )
+    publish_context = zmq.Context()
+    publisher = publish_context.socket(zmq.PUB)
+    publisher.bind(args.publish_bind)
+    logging.info("已启动发布端: %s, topic=%r", args.publish_bind, args.publish_topic)
 
     def handle_signal(signum: int, _frame: Any) -> None:
         logging.info("收到信号 %s，正在停止订阅服务", signum)
@@ -186,10 +192,17 @@ def main() -> None:
             "scene": scene,
             "conference": confidence,
         }
-        print(json.dumps(result, ensure_ascii=False))
+        result_json = json.dumps(result, ensure_ascii=False)
+        publisher.send_multipart([args.publish_topic.encode("utf-8"), result_json.encode("utf-8")])
+
+        print(result_json)
         sys.stdout.flush()
 
-    subscriber.run_forever(on_message=process_message)
+    try:
+        subscriber.run_forever(on_message=process_message)
+    finally:
+        publisher.close(linger=0)
+        publish_context.term()
 
 
 if __name__ == "__main__":
