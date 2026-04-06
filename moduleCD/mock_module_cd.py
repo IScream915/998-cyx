@@ -10,6 +10,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="模拟模块CD：订阅moduleA的5051消息")
     parser.add_argument("--endpoint", default="tcp://localhost:5051", help="订阅地址")
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
+    parser.add_argument("--publish_bind", default="tcp://*:5053", help="发布地址，供 moduleE 订阅")
+    parser.add_argument("--publish_topic", default="Frame", help="发布 topic")
     parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
     return parser
 
@@ -22,6 +24,8 @@ def main() -> None:
     socket.setsockopt(zmq.RCVTIMEO, args.timeout_ms)
     socket.setsockopt_string(zmq.SUBSCRIBE, args.topic)
     socket.connect(args.endpoint)
+    publisher = ctx.socket(zmq.PUB)
+    publisher.bind(args.publish_bind)
 
     running = True
 
@@ -33,6 +37,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop_handler)
 
     print(f"[moduleCD] SUB 已连接: {args.endpoint}, topic={args.topic}")
+    print(f"[moduleCD] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
     print("[moduleCD] 按 Ctrl+C 停止")
 
     try:
@@ -51,13 +56,17 @@ def main() -> None:
 
             try:
                 payload = json.loads(payload_text)
-                frame_id = payload.get("frame_id")
-                image_len = len(payload.get("image", ""))
-                print(f"[moduleCD][From A topic={topic}] frame_id={frame_id}, image(base64)_len={image_len}")
+                payload["image"] = "111111"
+                output_text = json.dumps(payload, ensure_ascii=False)
+                publisher.send_multipart(
+                    [args.publish_topic.encode("utf-8"), output_text.encode("utf-8")]
+                )
+                print(output_text)
             except json.JSONDecodeError:
                 print(f"[moduleCD][From A topic={topic}] {payload_text}")
     finally:
         socket.close(linger=0)
+        publisher.close(linger=0)
         ctx.term()
         print("[moduleCD] 已停止")
 
