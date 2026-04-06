@@ -54,13 +54,19 @@ def load_model(checkpoint_path, model_size='2_0x', num_classes=7, device='cuda')
 
 def preprocess_image(image_path, img_size=224):
     """图像预处理"""
+    image = Image.open(image_path).convert('RGB')
+    return preprocess_pil_image(image, img_size)
+
+
+def preprocess_pil_image(image, img_size=224):
+    """PIL图像预处理"""
     transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    image = Image.open(image_path).convert('RGB')
+    image = image.convert('RGB')
     image_tensor = transform(image).unsqueeze(0)
     return image_tensor, image
 

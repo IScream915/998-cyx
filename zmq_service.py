@@ -6,7 +6,10 @@ import sys
 import time
 from typing import Any, Callable, Optional
 
+import torch
 import zmq
+from imageProcess.codec import decode_base64_to_pil_image
+from inference import load_model, predict, preprocess_pil_image
 
 
 class ZMQJsonSubscriber:
@@ -115,6 +118,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="订阅 topic，默认 Frame")
     parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
     parser.add_argument("--reconnect_delay", type=float, default=1.0, help="重连等待(秒)")
+    parser.add_argument("--checkpoint", type=str, default="outputs/best_model.pth", help="模型检查点路径")
+    parser.add_argument(
+        "--model_size",
+        type=str,
+        default="2_0x",
+        choices=["0_5x", "0_8x", "1_0x", "2_0x"],
+        help="模型大小",
+    )
+    parser.add_argument("--num_classes", type=int, default=7, help="类别数量")
+    parser.add_argument("--img_size", type=int, default=224, help="输入图像大小")
+    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"], help="推理设备")
     return parser
 
 
@@ -126,6 +140,23 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
+
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
+
+    class_names = ["city street", "gas stations", "highway", "parking lot", "residential", "tunnel", "unknown"]
+
+    logging.info("加载模型: %s", args.checkpoint)
+    model = load_model(
+        checkpoint_path=args.checkpoint,
+        model_size=args.model_size,
+        num_classes=args.num_classes,
+        device=device,
+    )
+    if model is None:
+        raise RuntimeError("模型加载失败，请检查检查点文件")
 
     subscriber = ZMQJsonSubscriber(
         endpoint=args.endpoint,
@@ -141,14 +172,24 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    def print_message(payload: dict[str, Any], topic: Optional[str]) -> None:
-        if topic:
-            print(f"[topic={topic}] {json.dumps(payload, ensure_ascii=False)}")
-        else:
-            print(json.dumps(payload, ensure_ascii=False))
+    def process_message(payload: dict[str, Any], _topic: Optional[str]) -> None:
+        if "frame_id" not in payload or "image" not in payload:
+            raise ValueError("消息缺少 frame_id 或 image 字段")
+
+        frame_id = int(payload["frame_id"])
+        image = decode_base64_to_pil_image(payload["image"])
+        image_tensor, _ = preprocess_pil_image(image, args.img_size)
+        scene, confidence, _ = predict(model, image_tensor, device, class_names)
+
+        result = {
+            "frame_id": frame_id,
+            "scene": scene,
+            "conference": confidence,
+        }
+        print(json.dumps(result, ensure_ascii=False))
         sys.stdout.flush()
 
-    subscriber.run_forever(on_message=print_message)
+    subscriber.run_forever(on_message=process_message)
 
 
 if __name__ == "__main__":
