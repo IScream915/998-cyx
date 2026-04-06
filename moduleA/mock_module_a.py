@@ -1,10 +1,19 @@
 import argparse
 import json
 import signal
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import zmq
+
+# 兼容以脚本方式运行: python moduleA/mock_module_a.py
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from imageProcess.codec import encode_jpg_file_to_base64
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -13,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="发布 topic")
     parser.add_argument("--interval", type=float, default=1.0, help="发送间隔(秒)")
     parser.add_argument("--start_frame_id", type=int, default=1, help="起始 frame_id")
-    parser.add_argument("--image", default="aaaa", help="消息中的 image 字段内容")
+    parser.add_argument("--image_path", required=True, help="用于编码的 .jpg 图片路径")
     return parser
 
 
@@ -34,8 +43,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop_handler)
 
     frame_id = args.start_frame_id
+    image_base64 = encode_jpg_file_to_base64(args.image_path)
     print(f"[moduleA] PUB 已启动，地址: {args.bind}")
     print(f"[moduleA] topic: {args.topic}")
+    print(f"[moduleA] image_path: {args.image_path}")
     print("[moduleA] 按 Ctrl+C 停止")
 
     try:
@@ -45,7 +56,7 @@ def main() -> None:
         while running:
             payload = {
                 "frame_id": frame_id,
-                "image": args.image,
+                "image": image_base64,
             }
             socket.send_multipart(
                 [args.topic.encode("utf-8"), json.dumps(payload, ensure_ascii=False).encode("utf-8")]

@@ -5,15 +5,21 @@
 ## 启动
 
 ```bash
-python3 moduleA/mock_module_a.py
+python3 moduleA/mock_module_a.py --image_path inference/35a6a1aa-5cb6907b.jpg
 ```
 
-默认每秒发送一次，消息格式：
+推荐（模块方式）：
+
+```bash
+python3 -m moduleA.mock_module_a --image_path inference/35a6a1aa-5cb6907b.jpg
+```
+
+默认每秒发送一次，消息格式（仅两个字段）：
 
 ```json
 {
   "frame_id": 1,
-  "image": "aaaa"
+  "image": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
 }
 ```
 
@@ -26,11 +32,11 @@ python3 moduleA/mock_module_a.py
 - `--bind`：绑定地址，默认 `tcp://*:5051`
 - `--interval`：发送间隔(秒)，默认 `1.0`
 - `--start_frame_id`：起始帧号，默认 `1`
-- `--image`：image 字段内容，默认 `aaaa`
+- `--image_path`：用于编码的 `.jpg/.jpeg` 文件路径（必填）
 - `--topic`：发布 topic，默认 `Frame`
 
 示例：
 
 ```bash
-python3 moduleA/mock_module_a.py --interval 0.2 --image aaaa
+python3 moduleA/mock_module_a.py --image_path inference/35a6a1aa-5cb6907b.jpg --interval 0.2
 ```
