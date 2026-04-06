@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="模拟模块A：持续发布JSON消息")
     parser.add_argument("--bind", default="tcp://*:5051", help="ZeroMQ PUB 绑定地址")
     parser.add_argument("--topic", default="Frame", help="发布 topic")
-    parser.add_argument("--interval", type=float, default=1.0, help="发送间隔(秒)")
+    parser.add_argument("--interval", type=float, default=0.5, help="发送间隔(秒)")
     parser.add_argument("--start_frame_id", type=int, default=1, help="起始 frame_id")
     parser.add_argument("--image_path", required=True, help="用于编码的 .jpg 图片路径")
     return parser

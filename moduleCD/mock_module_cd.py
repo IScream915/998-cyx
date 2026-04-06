@@ -1,6 +1,8 @@
 import argparse
 import json
+import random
 import signal
+import time
 from typing import Any
 
 import zmq
@@ -56,6 +58,8 @@ def main() -> None:
 
             try:
                 payload = json.loads(payload_text)
+                # 模拟真实耗时任务：随机睡眠 200ms~500ms
+                time.sleep(random.uniform(0.2, 0.5))
                 payload["image"] = "111111"
                 output_text = json.dumps(payload, ensure_ascii=False)
                 publisher.send_multipart(
