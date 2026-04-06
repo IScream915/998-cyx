@@ -10,6 +10,7 @@ import zmq
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="模拟模块A：持续发布JSON消息")
     parser.add_argument("--bind", default="tcp://*:5051", help="ZeroMQ PUB 绑定地址")
+    parser.add_argument("--topic", default="Frame", help="发布 topic")
     parser.add_argument("--interval", type=float, default=1.0, help="发送间隔(秒)")
     parser.add_argument("--start_frame_id", type=int, default=1, help="起始 frame_id")
     parser.add_argument("--image", default="aaaa", help="消息中的 image 字段内容")
@@ -34,6 +35,7 @@ def main() -> None:
 
     frame_id = args.start_frame_id
     print(f"[moduleA] PUB 已启动，地址: {args.bind}")
+    print(f"[moduleA] topic: {args.topic}")
     print("[moduleA] 按 Ctrl+C 停止")
 
     try:
@@ -45,8 +47,10 @@ def main() -> None:
                 "frame_id": frame_id,
                 "image": args.image,
             }
-            socket.send_json(payload)
-            print(json.dumps(payload, ensure_ascii=False))
+            socket.send_multipart(
+                [args.topic.encode("utf-8"), json.dumps(payload, ensure_ascii=False).encode("utf-8")]
+            )
+            print(f"[topic={args.topic}] {json.dumps(payload, ensure_ascii=False)}")
             frame_id += 1
             time.sleep(args.interval)
     finally:

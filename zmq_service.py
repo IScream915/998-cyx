@@ -15,7 +15,7 @@ class ZMQJsonSubscriber:
     def __init__(
         self,
         endpoint: str,
-        topic: str = "",
+        topic: str = "Frame",
         recv_timeout_ms: int = 1000,
         reconnect_delay_sec: float = 1.0,
     ) -> None:
@@ -112,7 +112,7 @@ class ZMQJsonSubscriber:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ZeroMQ JSON 订阅服务")
     parser.add_argument("--endpoint", default="tcp://localhost:5051", help="订阅地址")
-    parser.add_argument("--topic", default="", help="订阅 topic，默认全量")
+    parser.add_argument("--topic", default="Frame", help="订阅 topic，默认 Frame")
     parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
     parser.add_argument("--reconnect_delay", type=float, default=1.0, help="重连等待(秒)")
     return parser
