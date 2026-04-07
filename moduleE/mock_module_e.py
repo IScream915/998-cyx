@@ -1,6 +1,7 @@
 import argparse
 import json
 import signal
+import time
 from typing import Any
 
 import zmq
@@ -22,7 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="订阅地址列表，逗号分隔",
     )
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
-    parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
+    parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
+    parser.add_argument("--match_timeout_ms", type=int, default=450, help="同一 frame_id 配对超时(ms)")
     return parser
 
 
@@ -57,11 +59,12 @@ def main() -> None:
     print(f"[moduleE] SUB 已连接: {', '.join(endpoints)}, topic={args.topic}")
     print("[moduleE] 按 Ctrl+C 停止")
 
+    pending = {}
+
     try:
         while running:
             events = dict(poller.poll(args.timeout_ms))
-            if not events:
-                continue
+            now = time.monotonic()
 
             for socket in sockets:
                 if socket not in events:
@@ -69,24 +72,51 @@ def main() -> None:
 
                 frames = socket.recv_multipart()
                 endpoint = socket_to_endpoint[socket]
+                label = source_label(endpoint)
+                if label not in ("B", "CD"):
+                    continue
 
                 if len(frames) >= 2:
-                    topic = frames[0].decode("utf-8", errors="replace").strip()
                     payload_text = frames[-1].decode("utf-8", errors="replace").strip()
                 else:
-                    topic = args.topic
                     payload_text = frames[0].decode("utf-8", errors="replace").strip()
 
                 try:
                     payload = json.loads(payload_text)
-                    label = source_label(endpoint)
-                    print(
-                        f"[moduleE][from {label}][topic={topic}] "
-                        f"{json.dumps(payload, ensure_ascii=False)}"
-                    )
                 except json.JSONDecodeError:
-                    label = source_label(endpoint)
-                    print(f"[moduleE][from {label}][topic={topic}] {payload_text}")
+                    continue
+
+                if "frame_id" not in payload:
+                    continue
+
+                try:
+                    frame_id = int(payload["frame_id"])
+                except (TypeError, ValueError):
+                    continue
+
+                if frame_id not in pending:
+                    pending[frame_id] = {"first_ts": now, "B": None, "CD": None}
+
+                pending[frame_id][label] = payload
+                entry = pending[frame_id]
+                if entry["B"] is not None and entry["CD"] is not None:
+                    result = {
+                        "frame_id": frame_id,
+                        "from_B": entry["B"],
+                        "from_CD": entry["CD"],
+                    }
+                    print(json.dumps(result, ensure_ascii=False))
+                    del pending[frame_id]
+
+            # 超时未配齐的 frame_id 直接丢弃，保证低延迟
+            expire_before = now - (args.match_timeout_ms / 1000.0)
+            expired_ids = [
+                frame_id
+                for frame_id, entry in pending.items()
+                if entry["first_ts"] < expire_before
+            ]
+            for frame_id in expired_ids:
+                del pending[frame_id]
     finally:
         for socket in sockets:
             poller.unregister(socket)
