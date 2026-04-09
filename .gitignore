@@ -7,3 +7,5 @@ model/__pycache__
 outputs/*
 __pycache__
 imageProcess/__pycache__
+coreDetector/weights/*
+coreDetector/outputs/*
