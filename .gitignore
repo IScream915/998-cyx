@@ -5,6 +5,8 @@
 .vscode/*
 model/__pycache__
 outputs/*
+moduleB/model/__pycache__
+moduleB/outputs/*
 __pycache__
 imageProcess/__pycache__
 coreDetector/weights/*
