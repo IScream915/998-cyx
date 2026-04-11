@@ -1,0 +1,17 @@
+settings_version: 0.0.4
+datasets_dir: /Users/chasecloud/Documents/Class/998-cyx/datasets
+weights_dir: weights
+runs_dir: runs
+uuid: bbbee0dd308d54305991ed7232a3e2f9e3d1c977096fdf863709cc39a05dc8a9
+sync: true
+api_key: ''
+openai_api_key: ''
+clearml: true
+comet: true
+dvc: true
+hub: true
+mlflow: true
+neptune: true
+raytune: true
+tensorboard: true
+wandb: true

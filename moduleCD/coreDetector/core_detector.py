@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import contextlib
 import json
 import logging
 import os
 import traceback
 import warnings
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -282,6 +285,37 @@ class CoreDetector:
         canvas.save(out_path, format="JPEG", quality=92)
         return str(out_path)
 
+    def _save_visualization_from_pil(
+        self,
+        image: Image.Image,
+        signs: List[Dict[str, Any]],
+        pedestrians: List[Dict[str, Any]],
+        vehicles: List[Dict[str, Any]],
+        vis_output_path: str,
+    ) -> str:
+        canvas = image.convert("RGB")
+        draw = ImageDraw.Draw(canvas)
+        font = ImageFont.load_default()
+
+        for d in signs:
+            label = f"{d['class_name']} {d['confidence']:.2f}"
+            self._draw_box(draw, font, d["bbox"], label, (255, 215, 0))
+
+        for d in pedestrians:
+            label = f"person {d['confidence']:.2f}"
+            self._draw_box(draw, font, d["bbox"], label, (0, 220, 80))
+
+        for d in vehicles:
+            cls_name = d["class_name"]
+            label = f"{cls_name} {d['confidence']:.2f}"
+            color = VEHICLE_VIS_COLORS.get(cls_name, (255, 140, 0))
+            self._draw_box(draw, font, d["bbox"], label, color)
+
+        out_path = Path(vis_output_path).resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        canvas.save(out_path, format="JPEG", quality=92)
+        return str(out_path)
+
     def _parse_signs(self, results: Any) -> List[Dict[str, Any]]:
         detections: List[Dict[str, Any]] = []
         for r in results:
@@ -332,6 +366,30 @@ class CoreDetector:
 
         return pedestrians, vehicles
 
+    def _run_detection(self, source: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        sign_results = self.sign_model.predict(
+            source=source,
+            conf=self.conf,
+            iou=self.iou,
+            imgsz=self.img_size,
+            device=self.device,
+            verbose=False,
+        )
+
+        scene_results = self.scene_model.predict(
+            source=source,
+            conf=self.conf,
+            iou=self.iou,
+            imgsz=self.img_size,
+            classes=SCENE_CLASSES,
+            device=self.device,
+            verbose=False,
+        )
+
+        signs = self._parse_signs(sign_results)
+        pedestrians, vehicles = self._parse_scene(scene_results)
+        return signs, pedestrians, vehicles
+
     def detect(
         self,
         image_path: str,
@@ -344,27 +402,7 @@ class CoreDetector:
         with Image.open(image_source) as im:
             width, height = im.size
 
-        sign_results = self.sign_model.predict(
-            source=image_source,
-            conf=self.conf,
-            iou=self.iou,
-            imgsz=self.img_size,
-            device=self.device,
-            verbose=False,
-        )
-
-        scene_results = self.scene_model.predict(
-            source=image_source,
-            conf=self.conf,
-            iou=self.iou,
-            imgsz=self.img_size,
-            classes=SCENE_CLASSES,
-            device=self.device,
-            verbose=False,
-        )
-
-        signs = self._parse_signs(sign_results)
-        pedestrians, vehicles = self._parse_scene(scene_results)
+        signs, pedestrians, vehicles = self._run_detection(image_source)
         if save_visualization:
             vis_path = vis_output_path or self._default_vis_path(p)
             self._save_visualization(
@@ -373,6 +411,55 @@ class CoreDetector:
                 pedestrians=pedestrians,
                 vehicles=vehicles,
                 vis_output_path=vis_path,
+            )
+
+        return {
+            "success": True,
+            "image_size": {"width": int(width), "height": int(height)},
+            "traffic_signs": signs,
+            "num_traffic_signs": len(signs),
+            "pedestrians": pedestrians,
+            "num_pedestrians": len(pedestrians),
+            "vehicles": vehicles,
+            "num_vehicles": len(vehicles),
+        }
+
+    def detect_base64(
+        self,
+        image_base64: str,
+        save_visualization: bool = False,
+        vis_output_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not isinstance(image_base64, str) or not image_base64.strip():
+            raise ValueError("image_base64 must be a non-empty string")
+
+        try:
+            image_bytes = base64.b64decode(image_base64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ValueError("invalid base64 image data") from e
+
+        if len(image_bytes) < 4:
+            raise ValueError("decoded image bytes too short")
+        if not (image_bytes.startswith(b"\xff\xd8") and image_bytes.endswith(b"\xff\xd9")):
+            raise ValueError("decoded image is not JPEG format")
+
+        with Image.open(BytesIO(image_bytes)) as im:
+            image = im.convert("RGB")
+            width, height = image.size
+
+        signs, pedestrians, vehicles = self._run_detection(image)
+
+        if save_visualization:
+            if vis_output_path:
+                out = vis_output_path
+            else:
+                out = str((self.output_dir / "base64_detected.jpg").resolve())
+            self._save_visualization_from_pil(
+                image=image,
+                signs=signs,
+                pedestrians=pedestrians,
+                vehicles=vehicles,
+                vis_output_path=out,
             )
 
         return {

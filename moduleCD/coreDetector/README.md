@@ -59,6 +59,13 @@ result = detector.detect("/path/to/your.jpg")
 print(result)
 ```
 
+直接使用 base64 编码 jpg（不需要二次落盘）：
+
+```python
+result = detector.detect_base64(image_base64_str)
+print(result)
+```
+
 ## Default model path priority
 
 If no model path is passed:
