@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from moduleCD.coreDetector import CoreDetector
+from moduleCD.coreDetector.traffic_sign_map import TRAFFIC_SIGN
 
 
 def _slim_detections(items: Any, include_class_name: bool = False) -> list[dict]:
@@ -29,7 +30,11 @@ def _slim_detections(items: Any, include_class_name: bool = False) -> list[dict]
             "confidence": item.get("confidence", 0.0),
         }
         if include_class_name:
-            row["class_name"] = item.get("class_name", "")
+            sign_key = item.get("class_name", "")
+            if sign_key in TRAFFIC_SIGN:
+                row["class_name"] = TRAFFIC_SIGN[sign_key].get("name", sign_key)
+            else:
+                row["class_name"] = sign_key
         slim.append(row)
     return slim
 
