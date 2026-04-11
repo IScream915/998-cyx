@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from moduleCD.coreDetector import CoreDetector
 
 
-def _slim_detections(items: Any) -> list[dict]:
+def _slim_detections(items: Any, include_class_name: bool = False) -> list[dict]:
     slim: list[dict] = []
     if not isinstance(items, list):
         return slim
@@ -24,12 +24,13 @@ def _slim_detections(items: Any) -> list[dict]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        slim.append(
-            {
-                "bbox": item.get("bbox", []),
-                "confidence": item.get("confidence", 0.0),
-            }
-        )
+        row = {
+            "bbox": item.get("bbox", []),
+            "confidence": item.get("confidence", 0.0),
+        }
+        if include_class_name:
+            row["class_name"] = item.get("class_name", "")
+        slim.append(row)
     return slim
 
 
@@ -117,7 +118,9 @@ def main() -> None:
                     vis_output_path=vis_out,
                 )
 
-                traffic_signs = _slim_detections(detect_result.get("traffic_signs", []))
+                traffic_signs = _slim_detections(
+                    detect_result.get("traffic_signs", []), include_class_name=True
+                )
                 pedestrians = _slim_detections(detect_result.get("pedestrians", []))
                 vehicles = _slim_detections(detect_result.get("vehicles", []))
 
@@ -131,7 +134,7 @@ def main() -> None:
                     "num_pedestrians": len(pedestrians),
                     "vehicles": vehicles,
                     "num_vehicles": len(vehicles),
-                    "tracked_pedestrians": True,
+                    "tracked_pedestrians": False,
                 }
                 output_text = json.dumps(output_payload, ensure_ascii=False)
                 publisher.send_multipart(

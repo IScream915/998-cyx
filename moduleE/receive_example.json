@@ -2,7 +2,6 @@
     "frame_id": 47, 
     "scene": "parking lot",
     "speed": 60,
-    "image_size": {"width": 1280, "height": 720}, 
     "traffic_signs": [
         {"bbox": [371, 215, 1059, 570], "confidence": 0.9124}
     ], 

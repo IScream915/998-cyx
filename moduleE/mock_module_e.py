@@ -95,9 +95,17 @@ def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict
         "detected_signs": _extract_detected_signs(cd_payload),
     }
 
-    # 若 CD 已提供高危行人字段则透传（用于 P0 熔断）
-    if isinstance(cd_payload.get("tracked_pedestrians"), dict):
-        perception["tracked_pedestrians"] = cd_payload["tracked_pedestrians"]
+    # tracked_pedestrians 兼容处理：
+    # 1) dict: 直接透传
+    # 2) True: 视为 HIGH + blind spot（临时规则）
+    tracked_val = cd_payload.get("tracked_pedestrians")
+    if isinstance(tracked_val, dict):
+        perception["tracked_pedestrians"] = tracked_val
+    elif tracked_val is True:
+        perception["tracked_pedestrians"] = {
+            "risk_level": "HIGH",
+            "in_blind_spot": True,
+        }
 
     return perception
 
