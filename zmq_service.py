@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import signal
 import sys
 import time
@@ -195,6 +196,7 @@ def main() -> None:
             "frame_id": frame_id,
             "scene": scene,
             "conference": confidence,
+            "speed": random.randint(30, 90),
         }
         result_json = json.dumps(result, ensure_ascii=False)
         publisher.send_multipart([args.publish_topic.encode("utf-8"), result_json.encode("utf-8")])
