@@ -24,7 +24,7 @@ python3 moduleE/mock_module_e.py
 - `--endpoints`：订阅地址列表（逗号分隔），默认 `tcp://localhost:5052,tcp://localhost:5053`
 - `--topic`：订阅 topic，默认 `Frame`
 - `--timeout_ms`：轮询等待时间，默认 `10`
-- `--match_timeout_ms`：同一 frame_id 配对超时，默认 `450`
+- `--match_timeout_ms`：同一 frame_id 配对超时，默认 `1500`
 - `--kb_path`：规则库 JSON 路径，默认 `moduleE/gb5768_rules.json`
 - `--st_model`：句向量模型本地路径或模型名，默认 `moduleE/model/paraphrase-multilingual-MiniLM-L12-v2`
 - `--default_speed`：B 未提供车速时的默认速度，默认 `60.0`

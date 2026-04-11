@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
-    parser.add_argument("--match_timeout_ms", type=int, default=450, help="同一 frame_id 配对超时(ms)")
+    parser.add_argument("--match_timeout_ms", type=int, default=1500, help="同一 frame_id 配对超时(ms)")
 
     module_dir = Path(__file__).resolve().parent
     parser.add_argument(
@@ -169,6 +169,8 @@ def main() -> None:
     print("[moduleE] 按 Ctrl+C 停止")
 
     pending: Dict[int, Dict[str, Any]] = {}
+    dropped_timeout = 0
+    last_stat_log_ts = time.monotonic()
 
     try:
         while running:
@@ -247,6 +249,15 @@ def main() -> None:
             ]
             for frame_id in expired_ids:
                 del pending[frame_id]
+                dropped_timeout += 1
+
+            # 低频输出统计，便于定位“无输出”是否由超时丢弃导致
+            if dropped_timeout > 0 and (now - last_stat_log_ts) >= 1.0:
+                print(
+                    f"[moduleE] 配对超时丢弃累计: {dropped_timeout}, "
+                    f"当前待配对: {len(pending)}, match_timeout_ms={args.match_timeout_ms}"
+                )
+                last_stat_log_ts = now
     finally:
         for socket in sockets:
             poller.unregister(socket)
