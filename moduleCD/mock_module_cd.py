@@ -16,6 +16,23 @@ if str(PROJECT_ROOT) not in sys.path:
 from moduleCD.coreDetector import CoreDetector
 
 
+def _slim_detections(items: Any) -> list[dict]:
+    slim: list[dict] = []
+    if not isinstance(items, list):
+        return slim
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        slim.append(
+            {
+                "bbox": item.get("bbox", []),
+                "confidence": item.get("confidence", 0.0),
+            }
+        )
+    return slim
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="模块CD：订阅A并调用CoreDetector后发布")
     parser.add_argument("--endpoint", default="tcp://localhost:5051", help="订阅地址")
@@ -99,8 +116,23 @@ def main() -> None:
                     save_visualization=args.save_vis,
                     vis_output_path=vis_out,
                 )
-                output_payload = {"frame_id": frame_id}
-                output_payload.update(detect_result)
+
+                traffic_signs = _slim_detections(detect_result.get("traffic_signs", []))
+                pedestrians = _slim_detections(detect_result.get("pedestrians", []))
+                vehicles = _slim_detections(detect_result.get("vehicles", []))
+
+                # 下发格式对齐 moduleCD/pub_example.json
+                output_payload = {
+                    "frame_id": frame_id,
+                    "image_size": detect_result.get("image_size", {}),
+                    "traffic_signs": traffic_signs,
+                    "num_traffic_signs": len(traffic_signs),
+                    "pedestrians": pedestrians,
+                    "num_pedestrians": len(pedestrians),
+                    "vehicles": vehicles,
+                    "num_vehicles": len(vehicles),
+                    "tracked_pedestrians": True,
+                }
                 output_text = json.dumps(output_payload, ensure_ascii=False)
                 publisher.send_multipart(
                     [args.publish_topic.encode("utf-8"), output_text.encode("utf-8")]

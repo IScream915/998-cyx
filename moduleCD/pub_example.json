@@ -1,0 +1,24 @@
+{
+    "frame_id": 47, 
+    "image_size": {"width": 1280, "height": 720}, 
+    "traffic_signs": [
+        {"bbox": [371, 215, 1059, 570], "confidence": 0.9124}
+    ], 
+    "num_traffic_signs": 1, 
+    "pedestrians": [
+        {"bbox": [371, 215, 1059, 570], "confidence": 0.9124}
+    ], 
+    "num_pedestrians": 1, 
+    "vehicles": [
+        {"bbox": [371, 215, 1059, 570], "confidence": 0.9124}, 
+        {"bbox": [903, 259, 1280, 564], "confidence": 0.9118}, 
+        {"bbox": [1, 210, 354, 553], "confidence": 0.906}, 
+        {"bbox": [329, 254, 440, 359], "confidence": 0.7098}, 
+        {"bbox": [423, 253, 526, 348], "confidence": 0.5609}, 
+        {"bbox": [1215, 262, 1279, 302], "confidence": 0.4962}, 
+        {"bbox": [200, 227, 357, 339], "confidence": 0.4874}, 
+        {"bbox": [403, 258, 473, 291], "confidence": 0.4222}
+    ], 
+    "num_vehicles": 8,
+    "tracked_pedestrians": true
+}
