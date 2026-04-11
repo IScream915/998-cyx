@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 from model.repghost import repghostnet_0_5x, repghostnet_0_8x, repghostnet_1_0x, repghostnet_2_0x
-from torchvision import transforms
 from PIL import Image
 import argparse
 import os
@@ -60,14 +59,18 @@ def preprocess_image(image_path, img_size=224):
 
 def preprocess_pil_image(image, img_size=224):
     """PIL图像预处理"""
-    transform = transforms.Compose([
-        transforms.Resize((img_size, img_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-
     image = image.convert('RGB')
-    image_tensor = transform(image).unsqueeze(0)
+    image = image.resize((img_size, img_size), Image.BILINEAR)
+
+    # 避免 torchvision->numpy 路径导致的兼容性异常，直接用 torch 处理像素
+    byte_tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
+    image_tensor = byte_tensor.view(img_size, img_size, 3).permute(2, 0, 1).contiguous()
+    image_tensor = image_tensor.float().div(255.0)
+
+    mean = torch.tensor([0.485, 0.456, 0.406], dtype=image_tensor.dtype).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], dtype=image_tensor.dtype).view(3, 1, 1)
+    image_tensor = (image_tensor - mean) / std
+    image_tensor = image_tensor.unsqueeze(0)
     return image_tensor, image
 
 
