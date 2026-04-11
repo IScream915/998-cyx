@@ -4,6 +4,7 @@ import argparse
 import base64
 import binascii
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import os
@@ -24,7 +25,6 @@ RUNTIME_CACHE_DIR = Path(__file__).resolve().parent / ".runtime_cache"
 os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
 # Workaround for duplicated OpenMP runtime in some conda/macOS environments.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MPLCONFIGDIR", str((RUNTIME_CACHE_DIR / "mpl").resolve()))
 os.environ.setdefault("YOLO_CONFIG_DIR", str((RUNTIME_CACHE_DIR / "ultralytics").resolve()))
 os.environ.setdefault("XDG_CACHE_HOME", str((RUNTIME_CACHE_DIR / "xdg").resolve()))
@@ -139,6 +139,11 @@ VEHICLE_VIS_COLORS = {
 }
 
 
+def _default_num_threads() -> int:
+    cpu_count = os.cpu_count() or 1
+    return max(1, min(4, cpu_count))
+
+
 class CoreDetector:
     """
     Portable detector for:
@@ -158,16 +163,24 @@ class CoreDetector:
         iou: float = 0.45,
         img_size: int = 640,
         device: Optional[str] = None,
+        num_threads: Optional[int] = None,
+        num_interop_threads: int = 1,
+        enable_parallel_infer: bool = True,
     ) -> None:
         self.conf = conf
         self.iou = iou
         self.img_size = img_size
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.num_threads = self._normalize_positive_int(num_threads, _default_num_threads())
+        self.num_interop_threads = self._normalize_positive_int(num_interop_threads, 1)
+        self.enable_parallel_infer = bool(enable_parallel_infer)
+        self._parallel_executor: Optional[ThreadPoolExecutor] = None
 
         # Keep CLI output JSON-only by reducing third-party log noise.
         os.environ.setdefault("YOLO_VERBOSE", "False")
         YOLO_LOGGER.setLevel(logging.ERROR)
         _patch_ultralytics_export_formats_for_inference()
+        self._configure_torch_threads()
 
         self.base_dir = Path(__file__).resolve().parent
         self.sign_model_path = self._resolve_sign_model_path(sign_model_path)
@@ -175,8 +188,36 @@ class CoreDetector:
 
         self.sign_model = YOLO(self.sign_model_path)
         self.scene_model = YOLO(self.scene_model_path)
+        if self.enable_parallel_infer:
+            self._parallel_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cd-infer")
         self.output_dir = self.base_dir / "outputs"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _normalize_positive_int(value: Optional[int], default: int) -> int:
+        if value is None:
+            return default
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if parsed > 0 else default
+
+    def _configure_torch_threads(self) -> None:
+        # Align OpenMP and torch thread pool to improve CPU inference throughput.
+        os.environ["OMP_NUM_THREADS"] = str(self.num_threads)
+        try:
+            torch.set_num_threads(self.num_threads)
+        except Exception as exc:
+            logging.warning("设置 torch 线程数失败，继续运行: %s", exc)
+
+        try:
+            torch.set_num_interop_threads(self.num_interop_threads)
+        except RuntimeError:
+            # torch 只允许在生命周期早期设置 interop 线程，失败时保持当前值即可。
+            pass
+        except Exception as exc:
+            logging.warning("设置 torch interop 线程数失败，继续运行: %s", exc)
 
     def _resolve_sign_model_path(self, user_path: Optional[str]) -> str:
         if user_path:
@@ -366,8 +407,8 @@ class CoreDetector:
 
         return pedestrians, vehicles
 
-    def _run_detection(self, source: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-        sign_results = self.sign_model.predict(
+    def _predict_sign(self, source: Any) -> Any:
+        return self.sign_model.predict(
             source=source,
             conf=self.conf,
             iou=self.iou,
@@ -376,7 +417,8 @@ class CoreDetector:
             verbose=False,
         )
 
-        scene_results = self.scene_model.predict(
+    def _predict_scene(self, source: Any) -> Any:
+        return self.scene_model.predict(
             source=source,
             conf=self.conf,
             iou=self.iou,
@@ -386,9 +428,42 @@ class CoreDetector:
             verbose=False,
         )
 
+    def _run_detection_serial(
+        self, source: Any
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        sign_results = self._predict_sign(source)
+        scene_results = self._predict_scene(source)
+
         signs = self._parse_signs(sign_results)
         pedestrians, vehicles = self._parse_scene(scene_results)
         return signs, pedestrians, vehicles
+
+    def _run_detection(self, source: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        if self._parallel_executor is not None:
+            try:
+                sign_future = self._parallel_executor.submit(self._predict_sign, source)
+                scene_future = self._parallel_executor.submit(self._predict_scene, source)
+                sign_results = sign_future.result()
+                scene_results = scene_future.result()
+                signs = self._parse_signs(sign_results)
+                pedestrians, vehicles = self._parse_scene(scene_results)
+                return signs, pedestrians, vehicles
+            except Exception as exc:
+                # 并行链路异常时退回串行，优先保证服务连续性与结果稳定性。
+                logging.exception("并行推理失败，回退串行模式: %s", exc)
+                self.enable_parallel_infer = False
+                self.close()
+                self._parallel_executor = None
+
+        return self._run_detection_serial(source)
+
+    def close(self) -> None:
+        if self._parallel_executor is not None:
+            self._parallel_executor.shutdown(wait=True, cancel_futures=False)
+            self._parallel_executor = None
+
+    def __del__(self) -> None:
+        self.close()
 
     def detect(
         self,
@@ -483,6 +558,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iou", type=float, default=0.45, help="NMS IoU threshold")
     parser.add_argument("--img-size", type=int, default=640, help="Inference image size")
     parser.add_argument("--device", default=None, help="cuda:0 / cpu")
+    parser.add_argument("--num-threads", type=int, default=None, help="torch/OpenMP 线程数，默认按 CPU 自动取值")
+    parser.add_argument("--num-interop-threads", type=int, default=1, help="torch interop 线程数")
+    parser.add_argument("--disable-parallel-infer", action="store_true", help="禁用双模型并行推理，退回串行")
     parser.add_argument("--no-vis", action="store_true", help="Disable output visualization image")
     parser.add_argument("--vis-out", default=None, help="Visualization image output path (.jpg)")
     parser.add_argument("--out", default=None, help="Optional output json file path")
@@ -500,12 +578,16 @@ def main() -> None:
                 iou=args.iou,
                 img_size=args.img_size,
                 device=args.device,
+                num_threads=args.num_threads,
+                num_interop_threads=args.num_interop_threads,
+                enable_parallel_infer=not args.disable_parallel_infer,
             )
             result = detector.detect(
                 args.image,
                 save_visualization=not args.no_vis,
                 vis_output_path=args.vis_out,
             )
+            detector.close()
     except Exception as e:
         result = {
             "success": False,

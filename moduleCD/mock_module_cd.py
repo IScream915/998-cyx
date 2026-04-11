@@ -52,6 +52,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iou", type=float, default=0.45, help="CoreDetector IoU 阈值")
     parser.add_argument("--img-size", type=int, default=640, help="CoreDetector 推理尺寸")
     parser.add_argument("--device", default=None, help="CoreDetector 推理设备: cuda:0/cpu")
+    parser.add_argument("--num_threads", type=int, default=4, help="CoreDetector torch/OpenMP 线程数")
+    parser.add_argument("--num_interop_threads", type=int, default=1, help="CoreDetector torch interop 线程数")
+    parser.add_argument(
+        "--disable_parallel_infer",
+        action="store_true",
+        help="禁用双模型并行推理（默认开启并行）",
+    )
     parser.add_argument("--save-vis", action="store_true", help="是否保存检测可视化图片")
     parser.add_argument("--vis-dir", default=None, help="可视化输出目录（需配合 --save-vis）")
     return parser
@@ -74,6 +81,9 @@ def main() -> None:
         iou=args.iou,
         img_size=args.img_size,
         device=args.device,
+        num_threads=args.num_threads,
+        num_interop_threads=args.num_interop_threads,
+        enable_parallel_infer=not args.disable_parallel_infer,
     )
     vis_dir = Path(args.vis_dir).resolve() if args.vis_dir else detector.output_dir
     if args.save_vis:
@@ -91,6 +101,11 @@ def main() -> None:
     print(f"[moduleCD] SUB 已连接: {args.endpoint}, topic={args.topic}")
     print(f"[moduleCD] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
     print("[moduleCD] CoreDetector 已加载")
+    print(
+        f"[moduleCD] 推理配置: num_threads={args.num_threads}, "
+        f"num_interop_threads={args.num_interop_threads}, "
+        f"parallel_infer={not args.disable_parallel_infer}"
+    )
     print("[moduleCD] 按 Ctrl+C 停止")
 
     try:
@@ -164,6 +179,7 @@ def main() -> None:
                 err_text = json.dumps(err_payload, ensure_ascii=False)
                 print(f"[moduleCD][From A topic={topic}] {err_text}")
     finally:
+        detector.close()
         socket.close(linger=0)
         publisher.close(linger=0)
         ctx.term()
