@@ -1,10 +1,24 @@
 import argparse
 import json
 import signal
+import sys
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, Dict, List
 
 import zmq
+
+# 兼容两种启动方式：
+# 1) python3 moduleE/mock_module_e.py
+# 2) python3 -m moduleE.mock_module_e
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODULE_DIR = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(MODULE_DIR) not in sys.path:
+    sys.path.insert(0, str(MODULE_DIR))
+
+from TrafficReminder import FusionDecisionEngine
 
 
 def source_label(endpoint: str) -> str:
@@ -15,8 +29,81 @@ def source_label(endpoint: str) -> str:
     return endpoint
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_speed(b_payload: Dict[str, Any], default_speed: float) -> float:
+    # B 侧若未携带车速，则使用默认值
+    if "speed" in b_payload:
+        return _to_float(b_payload.get("speed"), default_speed)
+    return default_speed
+
+
+def _extract_detected_signs(cd_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    signs: List[Dict[str, Any]] = []
+
+    # 兼容已标准化结构
+    if isinstance(cd_payload.get("detected_signs"), list):
+        for item in cd_payload["detected_signs"]:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content") or item.get("class_name")
+            if not content:
+                continue
+            signs.append(
+                {
+                    "content": str(content),
+                    "confidence": _to_float(item.get("confidence"), 0.0),
+                }
+            )
+
+    # 兼容 CoreDetector 输出结构: traffic_signs
+    elif isinstance(cd_payload.get("traffic_signs"), list):
+        for item in cd_payload["traffic_signs"]:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content") or item.get("class_name")
+            if not content:
+                continue
+            signs.append(
+                {
+                    "content": str(content),
+                    "confidence": _to_float(item.get("confidence"), 0.0),
+                }
+            )
+
+    # 兼容单值字段
+    elif cd_payload.get("sign_text"):
+        signs.append(
+            {
+                "content": str(cd_payload["sign_text"]),
+                "confidence": _to_float(cd_payload.get("confidence"), 0.0),
+            }
+        )
+
+    return signs
+
+
+def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict[str, Any]) -> Dict[str, Any]:
+    perception: Dict[str, Any] = {
+        "frame_id": frame_id,
+        "scene": b_payload.get("scene", "unknown") or "unknown",
+        "detected_signs": _extract_detected_signs(cd_payload),
+    }
+
+    # 若 CD 已提供高危行人字段则透传（用于 P0 熔断）
+    if isinstance(cd_payload.get("tracked_pedestrians"), dict):
+        perception["tracked_pedestrians"] = cd_payload["tracked_pedestrians"]
+
+    return perception
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="模拟模块E：同时订阅多个上游并消费消息")
+    parser = argparse.ArgumentParser(description="模块E：B+CD 对齐后调用 TrafficReminder 进行真实任务处理")
     parser.add_argument(
         "--endpoints",
         default="tcp://localhost:5052,tcp://localhost:5053",
@@ -25,6 +112,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
     parser.add_argument("--match_timeout_ms", type=int, default=450, help="同一 frame_id 配对超时(ms)")
+
+    module_dir = Path(__file__).resolve().parent
+    parser.add_argument(
+        "--kb_path",
+        default=str((module_dir / "gb5768_rules.json").resolve()),
+        help="GB5768 规则库路径",
+    )
+    parser.add_argument(
+        "--st_model",
+        default=str((module_dir / "model" / "paraphrase-multilingual-MiniLM-L12-v2").resolve()),
+        help="sentence-transformers 模型路径或模型名",
+    )
+    parser.add_argument("--default_speed", type=float, default=60.0, help="默认车速(km/h)")
     return parser
 
 
@@ -35,10 +135,18 @@ def main() -> None:
     if not endpoints:
         raise ValueError("endpoints 不能为空")
 
+    model_ref = args.st_model
+    if Path(args.st_model).exists():
+        model_ref = str(Path(args.st_model).resolve())
+    else:
+        print(f"[moduleE] 警告: 本地模型不存在，按模型名加载: {args.st_model}")
+
+    engine = FusionDecisionEngine(model_name=model_ref, kb_path=args.kb_path)
+
     ctx = zmq.Context()
     poller = zmq.Poller()
     sockets = []
-    socket_to_endpoint = {}
+    socket_to_endpoint: Dict[Any, str] = {}
     for endpoint in endpoints:
         socket = ctx.socket(zmq.SUB)
         socket.setsockopt_string(zmq.SUBSCRIBE, args.topic)
@@ -57,9 +165,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop_handler)
 
     print(f"[moduleE] SUB 已连接: {', '.join(endpoints)}, topic={args.topic}")
+    print("[moduleE] B+CD 按 frame_id 对齐后将调用 TrafficReminder 引擎处理")
     print("[moduleE] 按 Ctrl+C 停止")
 
-    pending = {}
+    pending: Dict[int, Dict[str, Any]] = {}
 
     try:
         while running:
@@ -99,12 +208,33 @@ def main() -> None:
 
                 pending[frame_id][label] = payload
                 entry = pending[frame_id]
+
                 if entry["B"] is not None and entry["CD"] is not None:
-                    result = {
-                        "frame_id": frame_id,
-                        "from_B": entry["B"],
-                        "from_CD": entry["CD"],
-                    }
+                    b_payload: Dict[str, Any] = entry["B"]
+                    cd_payload: Dict[str, Any] = entry["CD"]
+
+                    speed = _extract_speed(b_payload, args.default_speed)
+                    perception = _build_perception(frame_id, b_payload, cd_payload)
+
+                    try:
+                        engine.update_telematics({"speed": speed})
+                        engine.update_perception(perception)
+
+                        result = {
+                            "frame_id": frame_id,
+                            "status": "processed",
+                            "scene": perception.get("scene", "unknown"),
+                            "speed": speed,
+                            "detected_signs": perception.get("detected_signs", []),
+                        }
+                    except Exception as exc:
+                        result = {
+                            "frame_id": frame_id,
+                            "status": "process_error",
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        }
+
                     print(json.dumps(result, ensure_ascii=False))
                     del pending[frame_id]
 
@@ -122,6 +252,7 @@ def main() -> None:
             poller.unregister(socket)
             socket.close(linger=0)
         ctx.term()
+        engine.shutdown()
         print("[moduleE] 已停止")
 
 

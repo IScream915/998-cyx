@@ -9,3 +9,4 @@ __pycache__
 imageProcess/__pycache__
 coreDetector/weights/*
 coreDetector/outputs/*
+moduleE/model/paraphrase-multilingual-MiniLM-L12-v2/*
