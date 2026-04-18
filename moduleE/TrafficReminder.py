@@ -5,7 +5,7 @@ import queue
 import re
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from scipy.spatial.distance import cosine
 import logging
 import json
@@ -122,6 +122,7 @@ class FusionDecisionEngine:
         
         self.kb_texts = [e.standard_text for e in self.knowledge_base]
         self.kb_embeddings = self.encoder.encode(self.kb_texts)
+        self.limit_event_by_value = self._build_limit_event_index()
         
         self.cooldown_tracker = {}
         self.last_processed_ocr = "" 
@@ -152,6 +153,140 @@ class FusionDecisionEngine:
             print(f">> [Error] 解析知识库 JSON 失败: {e}")
             
         return kb_list
+
+    def _build_limit_event_index(self) -> Dict[int, TrafficSignEvent]:
+        """构建限速规则的数值索引：20 -> limit_20"""
+        index: Dict[int, TrafficSignEvent] = {}
+        warned_values = set()
+        for event in self.knowledge_base:
+            if event.category != "LIMIT":
+                continue
+            nums = re.findall(r'\d+', event.standard_text)
+            if not nums:
+                continue
+            value = int(nums[0])
+            if value in index:
+                if value not in warned_values:
+                    warned_values.add(value)
+                    print(f">> [Warn] 限速值 {value} 在知识库中重复，保留首条: {index[value].event_id}")
+                continue
+            index[value] = event
+        return index
+
+    @staticmethod
+    def _to_float(value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _to_non_negative_int(value, default: int = 0) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if parsed >= 0 else default
+
+    def _evaluate_density_risk(self, scene: str, num_pedestrians: int, num_vehicles: int) -> str:
+        """按场景阈值评估交通密度风险等级：HIGH/MEDIUM/LOW。"""
+        scene_key = str(scene or "unknown").strip().lower()
+
+        if scene_key in ("parking lot", "parking_lot"):
+            if num_pedestrians >= 1 or num_vehicles >= 6:
+                return "HIGH"
+            if num_vehicles >= 3:
+                return "MEDIUM"
+            return "LOW"
+
+        if scene_key in ("city street", "city_street", "street", "residential"):
+            if num_pedestrians >= 3 or num_vehicles >= 10 or (num_pedestrians >= 2 and num_vehicles >= 6):
+                return "HIGH"
+            if num_pedestrians >= 1 or num_vehicles >= 5:
+                return "MEDIUM"
+            return "LOW"
+
+        if scene_key in ("highway", "tunnel"):
+            if num_pedestrians >= 1 or num_vehicles >= 14:
+                return "HIGH"
+            if num_vehicles >= 8:
+                return "MEDIUM"
+            return "LOW"
+
+        if num_pedestrians >= 2 or num_vehicles >= 10:
+            return "HIGH"
+        if num_pedestrians >= 1 or num_vehicles >= 6:
+            return "MEDIUM"
+        return "LOW"
+
+    @staticmethod
+    def _build_density_suffix(risk_level: str) -> str:
+        if risk_level == "HIGH":
+            return "前方交通密度高，请立即减速并保持安全车距"
+        if risk_level == "MEDIUM":
+            return "前方交通较繁忙，请谨慎驾驶"
+        return ""
+
+    def _pick_sign_text(self, detected_signs: List[Dict]) -> Tuple[str, str, float]:
+        """
+        从多标志中选择最高置信度文本。
+        返回: (原始文本, 清洗文本, 置信度)
+        """
+        best_text = ""
+        best_conf = -1.0
+        for item in detected_signs:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content", "")
+            if not isinstance(content, str):
+                continue
+            raw_text = content.strip()
+            if not raw_text:
+                continue
+            conf = self._to_float(item.get("confidence"), 0.0)
+            if conf > best_conf:
+                best_conf = conf
+                best_text = raw_text
+
+        if not best_text:
+            return "", "", 0.0
+
+        clean_text = re.sub(r'[^\w\u4e00-\u9fa5]+', '', best_text)
+        return best_text, clean_text, best_conf
+
+    def _hard_match_limit_event(self, raw_text: str, clean_text: str) -> Optional[TrafficSignEvent]:
+        """
+        限速硬匹配：
+        仅当文本包含“限速”或“speedlimit”语义时，按数字直接匹配 LIMIT 规则。
+        """
+        if not clean_text:
+            return None
+        lowered = clean_text.lower()
+        is_limit_text = ("限速" in clean_text) or ("speedlimit" in lowered)
+        if not is_limit_text:
+            return None
+
+        nums = re.findall(r'\d+', clean_text)
+        if not nums:
+            return None
+
+        limit_val = int(nums[0])
+        return self.limit_event_by_value.get(limit_val)
+
+    def _semantic_match_event(self, clean_text: str) -> Tuple[Optional[TrafficSignEvent], float]:
+        """
+        语义兜底匹配：保持原有 embedding + cosine 阈值逻辑。
+        """
+        if not clean_text:
+            return None, 0.0
+
+        input_emb = self.encoder.encode([clean_text])[0]
+        scores = 1 - np.array([cosine(input_emb, kb_emb) for kb_emb in self.kb_embeddings])
+        best_idx = int(np.argmax(scores))
+        best_score = float(scores[best_idx])
+        if best_score < 0.60:
+            return None, best_score
+        return self.knowledge_base[best_idx], best_score
 
     def update_telematics(self, data: dict):
         self.blackboard.latest_telematics = data
@@ -186,31 +321,57 @@ class FusionDecisionEngine:
         if not detected_signs:
             return
 
-        ocr_text = detected_signs[0].get("content", "")
-        # 去噪预处理
-        clean_text = re.sub(r'[^\w\u4e00-\u9fa5]+', '', ocr_text)
-        
+        raw_text, clean_text, chosen_conf = self._pick_sign_text(detected_signs)
+        if not clean_text:
+            return
+
         # 性能优化：相同的字符串在短时间内不重复过大模型计算
-        if not clean_text or clean_text == self.last_processed_ocr:
+        if clean_text == self.last_processed_ocr:
             return
         self.last_processed_ocr = clean_text
 
-        # 【神经计算】：计算与国标库的向量相似度
-        input_emb = self.encoder.encode([clean_text])[0]
-        scores = 1 - np.array([cosine(input_emb, kb_emb) for kb_emb in self.kb_embeddings])
-        best_idx = np.argmax(scores)
-        best_score = scores[best_idx]
-        
-        if best_score < 0.60:
-            return # 相似度太低，当做杂音忽略
+        # Step1: 数字硬匹配（仅限速类）
+        matched_event = self._hard_match_limit_event(raw_text, clean_text)
+        match_source = "hard_match"
+        semantic_score = None
 
-        matched_event = self.knowledge_base[best_idx]
+        # Step2: 语义兜底
+        if matched_event is None:
+            matched_event, semantic_score = self._semantic_match_event(clean_text)
+            if matched_event is None:
+                return  # 相似度太低，当做杂音忽略
+            match_source = "semantic_fallback"
+
         current_scene = perception.get("scene", "unknown")
+        num_pedestrians = self._to_non_negative_int(perception.get("num_pedestrians"), 0)
+        num_vehicles = self._to_non_negative_int(perception.get("num_vehicles"), 0)
+
+        # 对历史调用方保持兼容：若未透传 num_*，回退数组长度
+        if "num_pedestrians" not in perception:
+            pedestrians = perception.get("pedestrians")
+            if isinstance(pedestrians, list):
+                num_pedestrians = len(pedestrians)
+        if "num_vehicles" not in perception:
+            vehicles = perception.get("vehicles")
+            if isinstance(vehicles, list):
+                num_vehicles = len(vehicles)
 
         # 【符号计算】：逻辑门控与校验
         # 校验 1：场景合法性 (有些路牌在特定场景无效)
         if current_scene not in matched_event.applicable_scenes and current_scene != "unknown":
             return 
+
+        if semantic_score is None:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] 🔎 匹配命中 source={match_source}, "
+                f"event_id={matched_event.event_id}, sign='{raw_text}', conf={chosen_conf:.4f}"
+            )
+        else:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] 🔎 匹配命中 source={match_source}, "
+                f"event_id={matched_event.event_id}, score={semantic_score:.4f}, "
+                f"sign='{raw_text}', conf={chosen_conf:.4f}"
+            )
 
         # 校验 2：状态耦合 (车速判断)
         if matched_event.category == "LIMIT":
@@ -218,15 +379,33 @@ class FusionDecisionEngine:
             if current_speed > (limit_val + 5):
                 # P1 级：违规超速
                 if self._can_trigger(f"P1_SPEED_{limit_val}", current_time, cooldown=5.0):
-                    self._dispatch_alert(f"您已超速，当前限速{limit_val}公里", priority=1)
+                    tts_content = f"您已超速，当前限速{limit_val}公里"
+                    density_level = self._evaluate_density_risk(current_scene, num_pedestrians, num_vehicles)
+                    density_suffix = self._build_density_suffix(density_level)
+                    if density_suffix:
+                        tts_content = f"{tts_content}，{density_suffix}"
+                    print(
+                        f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
+                        f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
+                    )
+                    self._dispatch_alert(tts_content, priority=1)
             else:
                 # P3 级：仅 UI 静默提醒
                 print(f"[{time.strftime('%H:%M:%S')}] 🖥️ UI 更新 -> 发现标志: {matched_event.standard_text} (未超速，静默处理)")
-        
+
         elif matched_event.category == "WARN":
             # P2 级：普通预警
             if self._can_trigger(f"P2_WARN_{matched_event.event_id}", current_time, cooldown=10.0):
-                self._dispatch_alert(matched_event.tts_template, priority=2)
+                tts_content = matched_event.tts_template
+                density_level = self._evaluate_density_risk(current_scene, num_pedestrians, num_vehicles)
+                density_suffix = self._build_density_suffix(density_level)
+                if density_suffix:
+                    tts_content = f"{tts_content}，{density_suffix}"
+                print(
+                    f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
+                    f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
+                )
+                self._dispatch_alert(tts_content, priority=2)
 
     def _can_trigger(self, event_key: str, current_time: float, cooldown: float) -> bool:
         """冷却防抖机制"""

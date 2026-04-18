@@ -8,5 +8,5 @@
     "num_traffic_signs": 1, 
     "num_pedestrians": 1, 
     "num_vehicles": 8,
-    "tracked_pedestrians": true
+    "tracked_pedestrians": false
 }

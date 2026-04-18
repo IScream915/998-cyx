@@ -36,6 +36,14 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _to_non_negative_int(value: Any, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
 def _extract_speed(b_payload: Dict[str, Any], default_speed: float) -> float:
     # B 侧若未携带车速，则使用默认值
     if "speed" in b_payload:
@@ -89,10 +97,24 @@ def _extract_detected_signs(cd_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict[str, Any]) -> Dict[str, Any]:
+    if "num_pedestrians" in cd_payload:
+        num_pedestrians = _to_non_negative_int(cd_payload.get("num_pedestrians"), 0)
+    else:
+        pedestrians = cd_payload.get("pedestrians")
+        num_pedestrians = len(pedestrians) if isinstance(pedestrians, list) else 0
+
+    if "num_vehicles" in cd_payload:
+        num_vehicles = _to_non_negative_int(cd_payload.get("num_vehicles"), 0)
+    else:
+        vehicles = cd_payload.get("vehicles")
+        num_vehicles = len(vehicles) if isinstance(vehicles, list) else 0
+
     perception: Dict[str, Any] = {
         "frame_id": frame_id,
         "scene": b_payload.get("scene", "unknown") or "unknown",
         "detected_signs": _extract_detected_signs(cd_payload),
+        "num_pedestrians": num_pedestrians,
+        "num_vehicles": num_vehicles,
     }
 
     # tracked_pedestrians 兼容处理：
