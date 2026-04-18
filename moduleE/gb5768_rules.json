@@ -3,28 +3,28 @@
     "event_id": "limit_20",
     "standard_text": "限速20",
     "category": "LIMIT",
-    "applicable_scenes": ["street", "parking lot", "unknown"],
+    "applicable_scenes": ["city street", "parking lot", "residential", "unknown"],
     "tts_template": "前方限速二十，请注意减速"
   },
   {
     "event_id": "limit_40",
     "standard_text": "限速40",
     "category": "LIMIT",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方限速四十公里"
   },
   {
     "event_id": "limit_60",
     "standard_text": "限速60",
     "category": "LIMIT",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "unknown"],
     "tts_template": "前方限速六十公里"
   },
   {
     "event_id": "limit_80",
     "standard_text": "限速80",
     "category": "LIMIT",
-    "applicable_scenes": ["highway", "street", "unknown"],
+    "applicable_scenes": ["highway", "city street", "unknown"],
     "tts_template": "前方限速八十公里"
   },
   {
@@ -45,119 +45,119 @@
     "event_id": "warn_pedestrian",
     "standard_text": "注意行人",
     "category": "WARN",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方注意行人，请随时准备刹车"
   },
   {
     "event_id": "warn_children",
     "standard_text": "注意儿童",
     "category": "WARN",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方学校或儿童活动区域，请减速避让"
   },
   {
     "event_id": "warn_work",
     "standard_text": "前方施工",
     "category": "WARN",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "residential", "unknown"],
     "tts_template": "注意，前方道路施工，请减速慢行"
   },
   {
     "event_id": "warn_curve",
     "standard_text": "连续弯道",
     "category": "WARN",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "residential", "unknown"],
     "tts_template": "前方连续弯道，请控制车速，注意安全"
   },
   {
     "event_id": "warn_accident",
     "standard_text": "事故易发路段",
     "category": "WARN",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "residential", "unknown"],
     "tts_template": "前方为事故易发路段，请谨慎驾驶"
   },
   {
     "event_id": "warn_danger",
     "standard_text": "注意危险",
     "category": "WARN",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "residential", "unknown"],
     "tts_template": "前方路况复杂，请注意危险"
   },
   {
     "event_id": "warn_rockfall",
     "standard_text": "注意落石",
     "category": "WARN",
-    "applicable_scenes": ["highway", "unknown"],
+    "applicable_scenes": ["highway", "tunnel", "unknown"],
     "tts_template": "前方山区道路，请注意落石"
   },
   {
     "event_id": "warn_crosswind",
     "standard_text": "注意横风",
     "category": "WARN",
-    "applicable_scenes": ["highway", "unknown"],
+    "applicable_scenes": ["highway", "city street", "unknown"],
     "tts_template": "前方注意横风，请紧握方向盘"
   },
   {
     "event_id": "ban_entry",
     "standard_text": "禁止驶入",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "highway", "parking lot", "unknown"],
+    "applicable_scenes": ["city street", "highway", "parking lot", "residential", "unknown"],
     "tts_template": "警告，前方禁止车辆驶入"
   },
   {
     "event_id": "ban_u_turn",
     "standard_text": "禁止掉头",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "tunnel", "unknown"],
     "tts_template": "该路口禁止掉头"
   },
   {
     "event_id": "ban_overtake",
     "standard_text": "禁止超车",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "tunnel", "unknown"],
     "tts_template": "该路段禁止超车，请保持车道"
   },
   {
     "event_id": "ban_horn",
     "standard_text": "禁止鸣喇叭",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方禁止鸣笛，请文明驾驶"
   },
   {
     "event_id": "ban_parking",
     "standard_text": "禁止停车",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "highway", "unknown"],
+    "applicable_scenes": ["city street", "highway", "residential", "tunnel", "unknown"],
     "tts_template": "该路段全线禁止停车"
   },
   {
     "event_id": "ban_left_turn",
     "standard_text": "禁止左转",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方路口禁止左转弯"
   },
   {
     "event_id": "ban_right_turn",
     "standard_text": "禁止右转",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方路口禁止右转弯"
   },
   {
     "event_id": "yield_stop",
     "standard_text": "停车让行",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方路口，请停车观察，让行主路车辆"
   },
   {
     "event_id": "yield_slow",
     "standard_text": "减速让行",
     "category": "MANDATORY",
-    "applicable_scenes": ["street", "unknown"],
+    "applicable_scenes": ["city street", "residential", "unknown"],
     "tts_template": "前方路口，请减速让行"
   }
 ]

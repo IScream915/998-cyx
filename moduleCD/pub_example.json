@@ -2,7 +2,7 @@
     "frame_id": 47, 
     "image_size": {"width": 1280, "height": 720}, 
     "traffic_signs": [
-        {"bbox": [371, 215, 1059, 570], "confidence": 0.9124}
+        {"bbox": [371, 215, 1059, 570], "confidence": 0.9124, "class_name": "Speed Limit 30 km/h"}
     ], 
     "num_traffic_signs": 1, 
     "pedestrians": [
