@@ -7,6 +7,7 @@ import contextlib
 from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
+import numpy as np
 import os
 import traceback
 import warnings
@@ -38,6 +39,20 @@ import torch
 from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
 from ultralytics.utils import LOGGER as YOLO_LOGGER
+
+try:
+    from .ocr_helper import (
+        DEFAULT_OCR_MIN_CONF,
+        apply_ocr_primary_inplace,
+        get_ocr_reader,
+    )
+except ImportError:
+    # Support running as script: python3 coreDetector/core_detector.py
+    from ocr_helper import (  # type: ignore
+        DEFAULT_OCR_MIN_CONF,
+        apply_ocr_primary_inplace,
+        get_ocr_reader,
+    )
 
 # In some mixed conda/pip setups torch.from_numpy fails with:
 # TypeError: expected np.ndarray (got numpy.ndarray)
@@ -166,6 +181,8 @@ class CoreDetector:
         num_threads: Optional[int] = None,
         num_interop_threads: int = 1,
         enable_parallel_infer: bool = True,
+        enable_ocr: bool = True,
+        ocr_min_conf: float = DEFAULT_OCR_MIN_CONF,
     ) -> None:
         self.conf = conf
         self.iou = iou
@@ -174,7 +191,10 @@ class CoreDetector:
         self.num_threads = self._normalize_positive_int(num_threads, _default_num_threads())
         self.num_interop_threads = self._normalize_positive_int(num_interop_threads, 1)
         self.enable_parallel_infer = bool(enable_parallel_infer)
+        self.enable_ocr = bool(enable_ocr)
+        self.ocr_min_conf = self._normalize_unit_float(ocr_min_conf, DEFAULT_OCR_MIN_CONF)
         self._parallel_executor: Optional[ThreadPoolExecutor] = None
+        self._ocr_reader = None
 
         # Keep CLI output JSON-only by reducing third-party log noise.
         os.environ.setdefault("YOLO_VERBOSE", "False")
@@ -188,6 +208,12 @@ class CoreDetector:
 
         self.sign_model = YOLO(self.sign_model_path)
         self.scene_model = YOLO(self.scene_model_path)
+        self._sign_class_names = self._extract_sign_class_names()
+
+        if self.enable_ocr:
+            # Startup precheck: fail fast if EasyOCR is unavailable or cannot initialize.
+            self._ocr_reader = get_ocr_reader(device=self.device)
+
         if self.enable_parallel_infer:
             self._parallel_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cd-infer")
         self.output_dir = self.base_dir / "outputs"
@@ -202,6 +228,16 @@ class CoreDetector:
         except (TypeError, ValueError):
             return default
         return parsed if parsed > 0 else default
+
+    @staticmethod
+    def _normalize_unit_float(value: Optional[float], default: float) -> float:
+        if value is None:
+            return default
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return max(0.0, min(1.0, parsed))
 
     def _configure_torch_threads(self) -> None:
         # Align OpenMP and torch thread pool to improve CPU inference throughput.
@@ -258,6 +294,14 @@ class CoreDetector:
                 return str(p)
 
         return "yolov8n.pt"
+
+    def _extract_sign_class_names(self) -> Optional[List[str]]:
+        names = getattr(self.sign_model, "names", None)
+        if isinstance(names, dict):
+            return [str(v) for v in names.values()]
+        if isinstance(names, (list, tuple)):
+            return [str(v) for v in names]
+        return None
 
     def _validate_image_path(self, image_path: str) -> Path:
         p = Path(image_path)
@@ -415,6 +459,7 @@ class CoreDetector:
             imgsz=self.img_size,
             device=self.device,
             verbose=False,
+            agnostic_nms=True,  # Avoid duplicate multi-class boxes for the same traffic sign.
         )
 
     def _predict_scene(self, source: Any) -> Any:
@@ -465,6 +510,17 @@ class CoreDetector:
     def __del__(self) -> None:
         self.close()
 
+    def _apply_ocr_to_signs(self, image_rgb: np.ndarray, signs: List[Dict[str, Any]]) -> None:
+        if not self.enable_ocr or not signs:
+            return
+        apply_ocr_primary_inplace(
+            image_rgb=image_rgb,
+            detections=signs,
+            known_classes=self._sign_class_names,
+            ocr_min_conf=self.ocr_min_conf,
+            reader=self._ocr_reader,
+        )
+
     def detect(
         self,
         image_path: str,
@@ -475,9 +531,12 @@ class CoreDetector:
         image_source = str(p.resolve())
 
         with Image.open(image_source) as im:
-            width, height = im.size
+            rgb_image = im.convert("RGB")
+            width, height = rgb_image.size
+            image_rgb = np.array(rgb_image)
 
         signs, pedestrians, vehicles = self._run_detection(image_source)
+        self._apply_ocr_to_signs(image_rgb, signs)
         if save_visualization:
             vis_path = vis_output_path or self._default_vis_path(p)
             self._save_visualization(
@@ -521,8 +580,10 @@ class CoreDetector:
         with Image.open(BytesIO(image_bytes)) as im:
             image = im.convert("RGB")
             width, height = image.size
+            image_rgb = np.array(image)
 
         signs, pedestrians, vehicles = self._run_detection(image)
+        self._apply_ocr_to_signs(image_rgb, signs)
 
         if save_visualization:
             if vis_output_path:
@@ -561,6 +622,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-threads", type=int, default=None, help="torch/OpenMP 线程数，默认按 CPU 自动取值")
     parser.add_argument("--num-interop-threads", type=int, default=1, help="torch interop 线程数")
     parser.add_argument("--disable-parallel-infer", action="store_true", help="禁用双模型并行推理，退回串行")
+    parser.add_argument("--disable-ocr", action="store_true", help="禁用数字类交通标志 OCR 主识别")
+    parser.add_argument("--ocr-min-conf", type=float, default=DEFAULT_OCR_MIN_CONF, help="OCR 主识别最低置信度阈值")
     parser.add_argument("--no-vis", action="store_true", help="Disable output visualization image")
     parser.add_argument("--vis-out", default=None, help="Visualization image output path (.jpg)")
     parser.add_argument("--out", default=None, help="Optional output json file path")
@@ -581,6 +644,8 @@ def main() -> None:
                 num_threads=args.num_threads,
                 num_interop_threads=args.num_interop_threads,
                 enable_parallel_infer=not args.disable_parallel_infer,
+                enable_ocr=not args.disable_ocr,
+                ocr_min_conf=args.ocr_min_conf,
             )
             result = detector.detect(
                 args.image,

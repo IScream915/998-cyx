@@ -7,6 +7,10 @@ A portable detector module that can be copied into another project and run direc
 - pedestrians (`person`)
 - vehicles (`bicycle`, `car`, `motorcycle`, `bus`, `truck`)
 
+For numeric traffic signs (`pl/il/pm/ph/pr`), OCR-primary correction is enabled by default:
+- OCR confidence high enough: use OCR-derived class
+- OCR confidence low / invalid class candidate: fallback to YOLO class
+
 ## Quick start
 
 Install dependencies first:
@@ -35,6 +39,7 @@ python3 coreDetector/core_detector.py \
   --iou 0.45 \
   --img-size 640 \
   --device cuda:0 \
+  --ocr-min-conf 0.4 \
   --vis-out /path/to/detected.jpg \
   --out /path/to/result.json
 ```
@@ -45,6 +50,12 @@ Disable visualization image output:
 python3 coreDetector/core_detector.py --image /path/to/your.jpg --no-vis
 ```
 
+Disable OCR-primary correction:
+
+```bash
+python3 coreDetector/core_detector.py --image /path/to/your.jpg --disable-ocr
+```
+
 ## Python API
 
 ```python
@@ -52,7 +63,9 @@ from coreDetector import CoreDetector
 
 detector = CoreDetector(
     sign_model_path="/path/to/best.pt",   # optional
-    scene_model_path="/path/to/yolov8n.pt" # optional
+    scene_model_path="/path/to/yolov8n.pt", # optional
+    enable_ocr=True,                       # default
+    ocr_min_conf=0.4,                      # default
 )
 
 result = detector.detect("/path/to/your.jpg")
@@ -99,6 +112,7 @@ At minimum, install:
 - `torch`
 - `opencv-python-headless`
 - `numpy`
+- `easyocr`
 
 These are already listed in this repo's `requirements.txt`.
 
@@ -109,3 +123,9 @@ If you see errors related to `weights_only` / `add_safe_globals` when loading `.
 - or pin `torch<=2.5.1` in your target project
 
 `core_detector.py` already includes a compatibility fallback for this issue.
+
+## OCR startup precheck
+
+When OCR is enabled (default), `CoreDetector` runs an EasyOCR startup precheck during initialization.
+If EasyOCR is missing or OCR model download/initialization fails, startup fails immediately.
+This is intentional to avoid silent OCR degradation in cross-project deployments.

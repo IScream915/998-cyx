@@ -59,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="禁用双模型并行推理（默认开启并行）",
     )
+    parser.add_argument("--disable-ocr", action="store_true", help="禁用数字类交通标志 OCR 主识别")
+    parser.add_argument("--ocr-min-conf", type=float, default=0.4, help="OCR 主识别最低置信度阈值")
     parser.add_argument("--save-vis", action="store_true", help="是否保存检测可视化图片")
     parser.add_argument("--vis-dir", default=None, help="可视化输出目录（需配合 --save-vis）")
     return parser
@@ -84,6 +86,8 @@ def main() -> None:
         num_threads=args.num_threads,
         num_interop_threads=args.num_interop_threads,
         enable_parallel_infer=not args.disable_parallel_infer,
+        enable_ocr=not args.disable_ocr,
+        ocr_min_conf=args.ocr_min_conf,
     )
     vis_dir = Path(args.vis_dir).resolve() if args.vis_dir else detector.output_dir
     if args.save_vis:
@@ -104,7 +108,9 @@ def main() -> None:
     print(
         f"[moduleCD] 推理配置: num_threads={args.num_threads}, "
         f"num_interop_threads={args.num_interop_threads}, "
-        f"parallel_infer={not args.disable_parallel_infer}"
+        f"parallel_infer={not args.disable_parallel_infer}, "
+        f"ocr_enabled={not args.disable_ocr}, "
+        f"ocr_min_conf={args.ocr_min_conf:.2f}"
     )
     print("[moduleCD] 按 Ctrl+C 停止")
 

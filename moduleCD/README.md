@@ -27,5 +27,12 @@ python3 moduleCD/mock_module_cd.py
 - `--iou`：IoU 阈值，默认 `0.45`
 - `--img-size`：推理尺寸，默认 `640`
 - `--device`：推理设备（`cuda:0`/`cpu`）
+- `--disable-ocr`：禁用数字类交通标志 OCR 主识别（默认启用 OCR）
+- `--ocr-min-conf`：OCR 主识别置信度阈值，默认 `0.4`
 - `--save-vis`：保存可视化检测图
 - `--vis-dir`：可视化输出目录（与 `--save-vis` 配合，默认写入 `moduleCD/coreDetector/outputs`）
+
+## OCR 启动检查
+
+默认启用 OCR 时，`CoreDetector` 启动会执行 EasyOCR 自检（导入 + Reader 初始化）。
+若缺少 `easyocr` 依赖，或首次模型下载失败，moduleCD 将直接启动失败并报错退出。
