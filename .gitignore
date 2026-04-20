@@ -5,7 +5,6 @@
 .vscode/*
 model/__pycache__
 outputs/*
-moduleB/outputs/*.pth
 moduleB/model/__pycache__
 __pycache__
 imageProcess/__pycache__
