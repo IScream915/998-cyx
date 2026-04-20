@@ -1,0 +1,7 @@
+city street
+gas stations
+highway
+parking lot
+residential
+tunnel
+unknown

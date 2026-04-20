@@ -1,0 +1,105 @@
+filename,predicted_class,confidence,top_1_class,top_1_confidence,top_2_class,top_2_confidence,top_3_class,top_3_confidence
+b6f2176b-20c2f527.jpg,parking lot,75.12385845184326,parking lot,75.123856,city street,12.051099,highway,4.9072895
+b3223c85-fccaf29d.jpg,highway,90.77215790748596,highway,90.772156,gas stations,2.1358216,unknown,1.9246681
+b6ffe7bd-017de39c.jpg,residential,86.86572313308716,residential,86.86572,city street,5.9722834,unknown,3.1347237
+77e31dd7-f20213c0.jpg,city street,90.19371271133423,city street,90.19371,residential,1.9165682,unknown,1.897105
+1337f4dd-ab3b187e.jpg,unknown,94.5447325706482,unknown,94.54473,residential,1.2740984,parking lot,1.219562
+b3e0345b-69069f01.jpg,city street,88.44298720359802,city street,88.442986,parking lot,2.2986264,residential,2.0930924
+66a7ed82-4d02eeef.jpg,parking lot,91.76598787307739,parking lot,91.76599,city street,3.6819458,tunnel,1.0451868
+b93e2268-4b277928.jpg,city street,75.64529776573181,city street,75.645294,highway,14.670084,unknown,2.2625391
+a54fdb22-5bdaf64e.jpg,city street,52.08851099014282,city street,52.088512,residential,37.27437,unknown,2.8658695
+896517e0-a13146fa.jpg,unknown,88.64517211914062,unknown,88.64517,city street,2.4955075,parking lot,2.443828
+b87d3733-161f6a8f.jpg,highway,51.18217468261719,highway,51.182175,city street,39.921234,residential,3.0099382
+b332df78-d6c7dff7.jpg,highway,87.06801533699036,highway,87.068016,city street,6.062868,residential,1.5155547
+a00e9c6c-c3007fad.jpg,city street,53.01167368888855,city street,53.011673,unknown,17.953592,parking lot,14.000635
+227c4a9a-8b7606f8.jpg,parking lot,90.95379114151001,parking lot,90.95379,highway,2.2176955,unknown,1.971477
+b4aefa17-2444bcc7.jpg,city street,92.05756187438965,city street,92.05756,parking lot,1.7233279,tunnel,1.6725475
+a1054b37-8303b687.jpg,highway,42.09215044975281,highway,42.09215,city street,35.574474,parking lot,11.704917
+b97c553a-004a5913.jpg,highway,91.92336201667786,highway,91.92336,unknown,1.7169131,city street,1.6346263
+b569a737-a960c153.jpg,city street,83.67777466773987,city street,83.67777,tunnel,5.831942,highway,4.1321006
+295f96ef-40ecb0f0.jpg,parking lot,78.98648381233215,parking lot,78.98648,highway,8.939026,city street,3.0860534
+80bfe16a-aac60f70.jpg,parking lot,93.9332664012909,parking lot,93.933266,highway,1.3638623,tunnel,1.1024661
+56f28b6c-7c876103.jpg,highway,89.69185948371887,highway,89.69186,tunnel,4.2520785,unknown,1.4133316
+175ea080-0919cc85.jpg,highway,86.81780695915222,highway,86.81781,city street,5.496321,unknown,3.0393949
+7a5cc93f-33dd37f4.jpg,gas stations,48.776933550834656,gas stations,48.77693,city street,27.035707,unknown,17.581953
+223046e4-89f1fe00.jpg,highway,92.59780049324036,highway,92.5978,city street,1.9861596,unknown,1.8863275
+047e732b-aa79a87d.jpg,highway,54.922717809677124,highway,54.922718,city street,29.190413,tunnel,9.267547
+b843ef1b-2756a85d.jpg,highway,90.73073267936707,highway,90.730736,gas stations,1.9519925,parking lot,1.7153114
+16ee2f26-d1308565.jpg,parking lot,93.83620023727417,parking lot,93.8362,tunnel,1.3704594,residential,1.2891464
+b674bc13-dceb1013.jpg,highway,89.9608850479126,highway,89.960884,city street,3.7772753,unknown,1.6386383
+b3d54db3-9ac260a3.jpg,city street,91.43242835998535,city street,91.43243,highway,2.3606687,tunnel,1.2947454
+b5b17442-df28704b.jpg,residential,90.51197171211243,residential,90.51197,unknown,2.2203279,city street,2.064036
+b6e602b3-50bfb157.jpg,city street,83.06419849395752,city street,83.0642,unknown,5.5226126,residential,3.391295
+b3ee5ba2-6cc0565d.jpg,city street,89.43556547164917,city street,89.43556,tunnel,2.2723823,gas stations,1.7613937
+11dc1774-6eb9c063.jpg,parking lot,80.0344705581665,parking lot,80.03447,city street,8.16723,highway,4.381281
+62ca6d0f-d901b621.jpg,unknown,91.8993353843689,unknown,91.89934,city street,2.6053574,residential,1.4796855
+b7aa329e-25d68dec.jpg,residential,69.41149234771729,residential,69.41149,highway,15.3769,unknown,6.564241
+b3c0357a-10fef986.jpg,highway,75.29417276382446,highway,75.294174,city street,17.464233,unknown,2.2853162
+35a6a1aa-5cb6907b.jpg,parking lot,94.58060264587402,parking lot,94.580605,city street,1.1540321,residential,1.0478088
+b338efff-595690ba.jpg,highway,83.1100583076477,highway,83.11006,city street,10.514069,parking lot,1.6880816
+aeae66ac-e3973b20.jpg,residential,38.31503093242645,residential,38.31503,unknown,33.99132,city street,17.54952
+b5ed8eaa-03e27c26.jpg,city street,85.90956926345825,city street,85.90957,unknown,3.7694752,parking lot,3.7172356
+b3ea5e17-c67b7a7a.jpg,city street,88.43114972114563,city street,88.43115,highway,5.75343,residential,1.4706035
+b3c094d3-75cda540.jpg,city street,90.23012518882751,city street,90.230125,tunnel,1.9897869,unknown,1.8559595
+a37ca645-dc5e50ef.jpg,unknown,83.16611051559448,unknown,83.16611,residential,5.6413574,city street,3.6133695
+76f36318-81acd734.jpg,city street,67.920583486557,city street,67.920586,parking lot,14.51682,highway,10.599813
+b89bf84d-d2c2e5a7.jpg,highway,88.32119107246399,highway,88.32119,city street,2.8169525,residential,2.023376
+b6accff3-eb28ad4f.jpg,city street,92.32139587402344,city street,92.321396,unknown,1.5056802,residential,1.4458163
+204a90bf-ccd2d717.jpg,highway,86.01856827735901,highway,86.01857,city street,6.4289966,parking lot,1.8569877
+66effbb9-886dfccd.jpg,city street,89.93595242500305,city street,89.93595,parking lot,2.0545878,unknown,1.947638
+b446d26a-9717e68c.jpg,highway,91.09572172164917,highway,91.09572,unknown,1.8399954,gas stations,1.6031096
+482c1ed6-45b3af6a.jpg,parking lot,64.11256194114685,parking lot,64.112564,gas stations,11.716975,residential,7.5031986
+62a46d6f-b28415ef.jpg,tunnel,96.19108438491821,tunnel,96.191086,residential,0.918999,city street,0.67520577
+b249e7f2-92d2efad.jpg,city street,72.70628213882446,city street,72.70628,highway,20.515116,parking lot,1.5315676
+b3e72283-584093dc.jpg,city street,54.82355356216431,city street,54.823555,parking lot,36.635277,highway,2.1931386
+539b54e7-3548e46f.jpg,highway,89.6222174167633,highway,89.622215,city street,2.3726468,tunnel,2.0823057
+596498f9-2cf6c07e.jpg,highway,85.36940813064575,highway,85.36941,parking lot,6.4790635,city street,2.6139946
+b6c3cbb0-1c4e006c.jpg,residential,92.22607612609863,residential,92.226074,city street,2.324655,unknown,1.4443736
+b5d6e647-44af4f17.jpg,city street,92.0069932937622,city street,92.006996,highway,3.7252235,gas stations,0.9913749
+42bc6e0a-2cd353b5.jpg,tunnel,89.14982676506042,tunnel,89.149826,residential,2.5883124,highway,2.140015
+51ca17ab-fe467646.jpg,parking lot,76.05361938476562,parking lot,76.05362,highway,11.335463,city street,6.278715
+056db1a0-b6a1bb41.jpg,highway,90.86049795150757,highway,90.8605,residential,1.9932435,tunnel,1.7648218
+76fb546e-805188d7.jpg,city street,87.89348602294922,city street,87.893486,residential,4.7770133,parking lot,1.5765535
+7543fa91-2ad625e0.jpg,city street,85.97908020019531,city street,85.97908,highway,5.4664874,unknown,1.9715104
+b4a99fcc-d849eaf4.jpg,city street,88.3096694946289,city street,88.30967,unknown,2.9860058,gas stations,2.7974908
+a555e695-664f3b74.jpg,unknown,59.00787115097046,unknown,59.00787,city street,18.370575,residential,8.581129
+b4a9b6ca-b621ed11.jpg,city street,89.07960653305054,city street,89.079605,residential,2.3504636,unknown,1.8579165
+42fc4ae5-d33890d1.jpg,parking lot,90.94520807266235,parking lot,90.945206,city street,2.6239934,highway,2.470278
+592bf411-c41eba25.jpg,tunnel,94.87609267234802,tunnel,94.87609,highway,1.6607738,city street,1.2215755
+b769f2fa-adedab4b.jpg,highway,87.20250725746155,highway,87.20251,city street,2.4102125,tunnel,2.3184028
+85d81130-a500d1a0.jpg,unknown,48.41725528240204,unknown,48.417255,residential,15.51928,parking lot,15.450306
+ab4e5406-bd0b9e6f.jpg,highway,50.564831495285034,highway,50.56483,unknown,37.4513,city street,3.8962424
+b3c4e98b-0c191966.jpg,highway,89.87588286399841,highway,89.875885,city street,3.5230033,gas stations,1.4807099
+aab834eb-ff7d0308.jpg,residential,53.762805461883545,residential,53.762806,city street,33.111736,unknown,4.0950913
+b3d0ccae-26380ab5.jpg,highway,82.19186067581177,highway,82.191864,city street,9.982759,residential,2.9743536
+b3be4113-a7c6d89b.jpg,city street,92.43221282958984,city street,92.43221,gas stations,1.5058941,parking lot,1.4553878
+b95feaae-690faa76.jpg,highway,88.12941312789917,highway,88.12941,city street,4.526598,residential,2.8859036
+b3e74777-122e3878.jpg,unknown,89.49597477912903,unknown,89.49597,city street,4.068639,residential,2.0814848
+15071028-af6060c8.jpg,highway,30.5587500333786,highway,30.55875,unknown,21.663895,city street,20.768925
+b4f542b3-534c29f9.jpg,residential,91.92745089530945,residential,91.92745,unknown,2.1659625,tunnel,1.3516983
+b334b56d-8296ef57.jpg,highway,86.37220859527588,highway,86.37221,tunnel,3.161326,residential,2.845551
+195a858f-a8435fb9.jpg,city street,61.21169328689575,city street,61.211693,residential,14.449856,unknown,7.6058755
+b277a772-87c10d5c.jpg,highway,91.36556386947632,highway,91.36556,tunnel,1.6295916,residential,1.5824236
+38421b91-a9e2f76b.jpg,highway,48.201748728752136,highway,48.201748,city street,24.49715,parking lot,13.038127
+b4aabd48-38c15aba.jpg,city street,89.45647478103638,city street,89.456474,tunnel,2.1171217,parking lot,2.007475
+b398a52e-5d44ea66.jpg,highway,90.68307280540466,highway,90.683075,unknown,2.0411506,gas stations,1.9084083
+b3dc64cd-705e7567.jpg,city street,87.22413778305054,city street,87.22414,residential,2.6635647,parking lot,2.5104551
+78ab3f38-3c839308.jpg,parking lot,91.36361479759216,parking lot,91.36362,highway,2.9298813,city street,1.855733
+69e5829c-b4fc896d.jpg,city street,79.70471978187561,city street,79.70472,highway,8.845283,unknown,4.808156
+b3e08585-3f5e6565.jpg,residential,92.38239526748657,residential,92.38239,city street,1.6914431,highway,1.2658935
+b5d4dc8d-99e1e150.jpg,residential,90.18251299858093,residential,90.18251,unknown,2.9447951,tunnel,1.8434547
+b3f0cdab-d5954c9a.jpg,highway,89.49025273323059,highway,89.49025,city street,3.4512606,residential,1.5338694
+b674bc13-8a296606.jpg,highway,36.99302077293396,highway,36.99302,tunnel,30.51874,city street,23.255827
+a434be38-99275270.jpg,highway,77.85826921463013,highway,77.85827,city street,14.043936,residential,2.3649025
+b4a2565f-3fc0ab61.jpg,city street,89.00156021118164,city street,89.00156,residential,3.0176973,unknown,2.2467945
+77de7c22-52df1a3e.jpg,parking lot,60.50345301628113,parking lot,60.503452,city street,25.494246,unknown,7.936103
+b857eb06-ef3987ae.jpg,highway,89.20515179634094,highway,89.205154,residential,2.1968868,unknown,1.8652135
+b6ffe7bd-7c91eac9.jpg,city street,90.02570509910583,city street,90.0257,parking lot,1.9077744,unknown,1.8784363
+b5a72f23-dfdc4b86.jpg,city street,55.9612512588501,city street,55.96125,residential,31.53669,highway,4.8691773
+17e5421c-b18171b6.jpg,parking lot,87.73486018180847,parking lot,87.73486,residential,3.731763,highway,3.5213058
+b5ff07b5-c8fe49f4.jpg,city street,88.29702734947205,city street,88.29703,highway,4.9750133,unknown,1.5748633
+b3060c96-d2391b61.jpg,highway,54.2576789855957,highway,54.25768,city street,39.133354,unknown,2.200951
+af4c48c3-17b983e2.jpg,city street,66.8369710445404,city street,66.83697,gas stations,22.40697,parking lot,3.3500526
+b91dd730-8e0a1a8f.jpg,highway,87.58874535560608,highway,87.588745,city street,4.006099,unknown,3.266787
+b3d6c39a-ecf305b3.jpg,city street,79.64950203895569,city street,79.649506,residential,12.792927,unknown,1.8435078
+b3e921ad-1fc43094.jpg,city street,84.67326760292053,city street,84.67327,residential,5.39602,highway,3.6835995

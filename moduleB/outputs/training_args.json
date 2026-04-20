@@ -1,0 +1,21 @@
+{
+  "train_dir": "dataset/train",
+  "val_dir": "dataset/val",
+  "num_classes": 7,
+  "model_size": "2_0x",
+  "pretrained": true,
+  "pretrained_weights": "weights/repghostnet_2_0x_weights.pth",
+  "batch_size": 128,
+  "epochs": 100,
+  "lr": 0.002,
+  "weight_decay": 0.0001,
+  "img_size": 256,
+  "output_dir": "outputs/standard_train_20251224_182530",
+  "save_interval": 10,
+  "log_interval": 20,
+  "resume": false,
+  "checkpoint": null,
+  "num_workers": 0,
+  "device": "cuda",
+  "seed": 42
+}
