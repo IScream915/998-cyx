@@ -17,6 +17,70 @@ from moduleCD.coreDetector import CoreDetector
 from moduleCD.coreDetector.traffic_sign_map import TRAFFIC_SIGN
 
 
+def _decode_frame(frame: bytes) -> str:
+    return frame.decode("utf-8", errors="replace").strip()
+
+
+def _parse_json_message(frames: list[bytes], subscribed_topic: str) -> tuple[str, dict[str, Any], str]:
+    if not frames:
+        raise ValueError("收到空消息帧")
+
+    topic = subscribed_topic
+    payload_text = ""
+
+    if len(frames) == 1:
+        payload_text = _decode_frame(frames[0])
+        # 兼容单帧消息: "Frame {json}"
+        if subscribed_topic and payload_text.startswith(subscribed_topic + " "):
+            payload_text = payload_text[len(subscribed_topic) + 1 :].strip()
+    else:
+        topic = _decode_frame(frames[0]) or subscribed_topic
+        # 兼容多帧中存在空帧的情况，取最后一个非空帧作为 payload
+        payload_candidates = [_decode_frame(frame) for frame in frames[1:]]
+        for candidate in reversed(payload_candidates):
+            if candidate:
+                payload_text = candidate
+                break
+
+    if not payload_text:
+        raise ValueError("消息 payload 为空，无法解析 JSON")
+
+    payload = json.loads(payload_text)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON 顶层必须为对象")
+
+    return topic, payload, payload_text
+
+
+def _extract_frame_and_image(payload: dict[str, Any]) -> tuple[int, str]:
+    if "frame_id" not in payload:
+        raise ValueError("消息缺少 frame_id 字段")
+
+    frame_id = int(payload["frame_id"])
+
+    frames = payload.get("frames")
+    if not isinstance(frames, dict):
+        raise ValueError("消息缺少或非法字段: frames")
+
+    top_camera = frames.get("top_camera")
+    if not isinstance(top_camera, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera")
+
+    top_payload = top_camera.get("payload")
+    if not isinstance(top_payload, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera.payload")
+
+    image_obj = top_payload.get("Image")
+    if not isinstance(image_obj, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera.payload.Image")
+
+    image_data = image_obj.get("data")
+    if not isinstance(image_data, str) or not image_data.strip():
+        raise ValueError("消息缺少或非法字段: frames.top_camera.payload.Image.data")
+
+    return frame_id, image_data
+
+
 def _slim_detections(items: Any, include_class_name: bool = False) -> list[dict]:
     slim: list[dict] = []
     if not isinstance(items, list):
@@ -121,25 +185,18 @@ def main() -> None:
             except zmq.Again:
                 continue
 
-            if len(frames) >= 2:
-                topic = frames[0].decode("utf-8", errors="replace").strip()
-                payload_text = frames[-1].decode("utf-8", errors="replace").strip()
-            else:
-                topic = args.topic
-                payload_text = frames[0].decode("utf-8", errors="replace").strip()
+            topic = args.topic
+            payload_text = ""
 
             try:
-                payload = json.loads(payload_text)
-                if "frame_id" not in payload or "image" not in payload:
-                    raise ValueError("消息缺少 frame_id 或 image 字段")
-
-                frame_id = int(payload["frame_id"])
+                topic, payload, payload_text = _parse_json_message(frames, args.topic)
+                frame_id, image_b64 = _extract_frame_and_image(payload)
                 vis_out = None
                 if args.save_vis:
                     vis_out = str((vis_dir / f"frame_{frame_id}_detected.jpg").resolve())
 
                 detect_result = detector.detect_base64(
-                    payload["image"],
+                    image_b64,
                     save_visualization=args.save_vis,
                     vis_output_path=vis_out,
                 )

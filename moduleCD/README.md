@@ -1,7 +1,7 @@
 # moduleCD 订阅+检测+发布端
 
 订阅 `moduleA` 在 `tcp://localhost:5051` 发布的 `Frame` 消息，
-对消息中的 `image`（base64 编码 jpg）直接调用 `coreDetector` 进行检测（不落盘二次保存），
+使用消息顶层 `frame_id` 作为当前帧号，并从 `frames.top_camera.payload.Image.data` 读取图像（base64 编码 jpg）直接调用 `coreDetector` 进行检测（不落盘二次保存），
 再将结果发布到 `tcp://localhost:5053` 供 `moduleE` 订阅。
 
 发布消息格式：
