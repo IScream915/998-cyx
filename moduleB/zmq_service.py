@@ -26,6 +26,52 @@ MODULE_B_DIR = Path(__file__).resolve().parent
 DEFAULT_CHECKPOINT = str((MODULE_B_DIR / "outputs" / "best_model.pth").resolve())
 
 
+def _parse_frame_id(value: Any, field_path: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_path} 必须可转换为整数，当前值: {value!r}") from exc
+
+
+def _parse_base64_image(value: Any, field_path: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_path} 必须是非空字符串(base64)")
+    return value
+
+
+def _extract_frame_and_image(payload: dict[str, Any]) -> tuple[int, str]:
+    # 兼容旧格式: {"frame_id": ..., "image": ...}
+    if "frame_id" in payload and "image" in payload:
+        frame_id = _parse_frame_id(payload["frame_id"], "frame_id")
+        image_b64 = _parse_base64_image(payload["image"], "image")
+        return frame_id, image_b64
+
+    # 新格式: {"frame_id": ..., "frames": {"top_camera": {"payload": {"Image": {"data": ...}}}}}
+    if "frame_id" not in payload:
+        raise ValueError("消息缺少 frame_id 字段")
+
+    frame_id = _parse_frame_id(payload["frame_id"], "frame_id")
+
+    frames = payload.get("frames")
+    if not isinstance(frames, dict):
+        raise ValueError("消息缺少或非法字段: frames")
+
+    top_camera = frames.get("top_camera")
+    if not isinstance(top_camera, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera")
+
+    top_payload = top_camera.get("payload")
+    if not isinstance(top_payload, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera.payload")
+
+    image_obj = top_payload.get("Image")
+    if not isinstance(image_obj, dict):
+        raise ValueError("消息缺少或非法字段: frames.top_camera.payload.Image")
+
+    image_b64 = _parse_base64_image(image_obj.get("data"), "frames.top_camera.payload.Image.data")
+    return frame_id, image_b64
+
+
 class ZMQJsonSubscriber:
     """持续订阅 ZeroMQ 消息并解析 JSON。"""
 
@@ -193,11 +239,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
 
     def process_message(payload: dict[str, Any], _topic: Optional[str]) -> None:
-        if "frame_id" not in payload or "image" not in payload:
-            raise ValueError("消息缺少 frame_id 或 image 字段")
-
-        frame_id = int(payload["frame_id"])
-        image = decode_base64_to_pil_image(payload["image"])
+        frame_id, image_b64 = _extract_frame_and_image(payload)
+        image = decode_base64_to_pil_image(image_b64)
         image_tensor, _ = preprocess_pil_image(image, args.img_size)
         scene, confidence, _ = predict(model, image_tensor, device, class_names)
 

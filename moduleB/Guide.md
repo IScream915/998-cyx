@@ -56,3 +56,37 @@ Top-3 预测:
   2. city street: 21.31%
   3. unknown: 11.09%
 ```
+
+## 🔌 moduleB ZeroMQ 服务输入格式
+
+`moduleB/zmq_service.py` 当前支持两种输入协议（优先匹配旧格式）：
+
+### 旧格式（兼容保留）
+```json
+{
+  "frame_id": 1,
+  "image": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+}
+```
+
+### 新格式（moduleA 最新结构）
+```json
+{
+  "frame_id": 1,
+  "frames": {
+    "top_camera": {
+      "payload": {
+        "Image": {
+          "data": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+        }
+      }
+    }
+  }
+}
+```
+
+字段映射规则：
+- `frame_id`：取消息顶层 `frame_id`（必须可转为整数）
+- `image`：取 `frames.top_camera.payload.Image.data`（必须为非空 base64 字符串）
+
+非法消息会记录明确字段路径并跳过，服务保持持续运行。

@@ -1,0 +1,73 @@
+{
+    "t_sync": 643.782,
+    "frame_id": 1,
+    "frames": {
+        "left_camera": {
+            "sensor_id": "left_camera",
+            "sensor_type": "camera",
+            "timestamp": 643.782,
+            "frame_id": 123,
+            "payload": {
+                "Image": {
+                    "width": 960,
+                    "height": 540,
+                    "data": [0, 1, 2, 3]
+                }
+            }
+        },
+        "right_camera": {
+            "sensor_id": "right_camera",
+            "sensor_type": "camera",
+            "timestamp": 643.782,
+            "frame_id": 123,
+            "payload": {
+                "Image": {
+                    "width": 960,
+                    "height": 540,
+                    "data": [0, 1, 2, 3]
+                }
+            }
+        },
+        "top_camera": {
+            "sensor_id": "top_camera",
+            "sensor_type": "camera",
+            "timestamp": 643.782,
+            "frame_id": 123,
+            "payload": {
+                "Image": {
+                    "width": 960,
+                    "height": 540,
+                    "data": [0, 1, 2, 3]
+                }
+            }
+        },
+        "Imu": {"accelerometer": { "x": 0.0, "y": 0.0, "z": 9.8 }},
+        "vehicle_states": {
+            "ego": {
+                "speed_mps": 12.3,
+                "light_state_bits": 33,
+                "turn_signal": "left"
+            }
+        },
+        "sync_meta": {
+            "reference_sensor_id": "top_camera",
+            "window_size": 0.12,
+            "motion_intensity": 0.61,
+            "time_offsets": {
+                "imu": 0.007
+            },
+            "kf_residuals": {
+                "imu": 0.001
+            },
+            "quality_scores": {
+                "imu": 0.78
+            },
+            "alignment_errors": {
+                "imu": 0.005
+            },
+            "missing_sensors": [],
+            "dropped_count": 0,
+            "out_of_order_count": 0
+        }
+  }
+}
