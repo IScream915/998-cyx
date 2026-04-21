@@ -1,8 +1,8 @@
 import argparse
 import json
 import logging
+import math
 import os
-import random
 import signal
 import sys
 import time
@@ -70,6 +70,33 @@ def _extract_frame_and_image(payload: dict[str, Any]) -> tuple[int, str]:
 
     image_b64 = _parse_base64_image(image_obj.get("data"), "frames.top_camera.payload.Image.data")
     return frame_id, image_b64
+
+
+def _extract_speed_kmh(payload: dict[str, Any]) -> int:
+    vehicle_states = payload.get("vehicle_states")
+    if not isinstance(vehicle_states, dict):
+        raise ValueError("消息缺少或非法字段: vehicle_states")
+
+    ego = vehicle_states.get("ego")
+    if not isinstance(ego, dict):
+        raise ValueError("消息缺少或非法字段: vehicle_states.ego")
+
+    if "speed_mps" not in ego:
+        raise ValueError("消息缺少字段: vehicle_states.ego.speed_mps")
+
+    raw_speed_mps = ego.get("speed_mps")
+    try:
+        speed_mps = float(raw_speed_mps)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"vehicle_states.ego.speed_mps 必须可转换为数值，当前值: {raw_speed_mps!r}") from exc
+
+    if not math.isfinite(speed_mps):
+        raise ValueError(f"vehicle_states.ego.speed_mps 必须是有限数值，当前值: {raw_speed_mps!r}")
+    if speed_mps < 0:
+        raise ValueError(f"vehicle_states.ego.speed_mps 不能为负值，当前值: {speed_mps}")
+
+    # 模块A提供的是 m/s，模块B输出 speed 统一用 km/h
+    return int(round(speed_mps * 3.6))
 
 
 class ZMQJsonSubscriber:
@@ -240,6 +267,7 @@ def main() -> None:
 
     def process_message(payload: dict[str, Any], _topic: Optional[str]) -> None:
         frame_id, image_b64 = _extract_frame_and_image(payload)
+        speed = _extract_speed_kmh(payload)
         image = decode_base64_to_pil_image(image_b64)
         image_tensor, _ = preprocess_pil_image(image, args.img_size)
         scene, confidence, _ = predict(model, image_tensor, device, class_names)
@@ -248,7 +276,7 @@ def main() -> None:
             "frame_id": frame_id,
             "scene": scene,
             "conference": confidence,
-            "speed": random.randint(30, 90),
+            "speed": speed,
         }
         result_json = json.dumps(result, ensure_ascii=False)
         publisher.send_multipart([args.publish_topic.encode("utf-8"), result_json.encode("utf-8")])

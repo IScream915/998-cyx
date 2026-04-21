@@ -1,73 +1,108 @@
 {
-    "t_sync": 643.782,
-    "frame_id": 1,
-    "frames": {
-        "left_camera": {
-            "sensor_id": "left_camera",
-            "sensor_type": "camera",
-            "timestamp": 643.782,
-            "frame_id": 123,
-            "payload": {
-                "Image": {
-                    "width": 960,
-                    "height": 540,
-                    "data": [0, 1, 2, 3]
-                }
-            }
-        },
-        "right_camera": {
-            "sensor_id": "right_camera",
-            "sensor_type": "camera",
-            "timestamp": 643.782,
-            "frame_id": 123,
-            "payload": {
-                "Image": {
-                    "width": 960,
-                    "height": 540,
-                    "data": [0, 1, 2, 3]
-                }
-            }
-        },
-        "top_camera": {
-            "sensor_id": "top_camera",
-            "sensor_type": "camera",
-            "timestamp": 643.782,
-            "frame_id": 123,
-            "payload": {
-                "Image": {
-                    "width": 960,
-                    "height": 540,
-                    "data": [0, 1, 2, 3]
-                }
-            }
-        },
-        "Imu": {"accelerometer": { "x": 0.0, "y": 0.0, "z": 9.8 }},
-        "vehicle_states": {
-            "ego": {
-                "speed_mps": 12.3,
-                "light_state_bits": 33,
-                "turn_signal": "left"
-            }
-        },
-        "sync_meta": {
-            "reference_sensor_id": "top_camera",
-            "window_size": 0.12,
-            "motion_intensity": 0.61,
-            "time_offsets": {
-                "imu": 0.007
-            },
-            "kf_residuals": {
-                "imu": 0.001
-            },
-            "quality_scores": {
-                "imu": 0.78
-            },
-            "alignment_errors": {
-                "imu": 0.005
-            },
-            "missing_sensors": [],
-            "dropped_count": 0,
-            "out_of_order_count": 0
+  "t_sync": 1367.9089642241597,
+  "frame_id": 22489,
+  "frames": {
+    "top_camera": {
+      "sensor_id": "top_camera",
+      "sensor_type": "camera",
+      "timestamp": 1367.9089642241597,
+      "frame_id": 158764,
+      "payload": {
+        "Image": {
+          "width": 960,
+          "height": 540,
+          "format": "jpeg",
+          "data": ""
         }
+      }
+    },
+    "imu": {
+      "sensor_id": "imu",
+      "sensor_type": "imu",
+      "timestamp": 1367.9029756262898,
+      "frame_id": 158763,
+      "payload": {
+        "Imu": {
+          "accelerometer": {
+            "x": 2.9375216960906982,
+            "y": -0.9918322563171387,
+            "z": 9.763081550598145
+          },
+          "gyroscope": {
+            "x": -1.9242750568082556e-05,
+            "y": -0.0007033637957647443,
+            "z": 0.012130431830883026
+          },
+          "compass": 4.723067760467529
+        }
+      }
+    },
+    "right_camera": {
+      "sensor_id": "right_camera",
+      "sensor_type": "camera",
+      "timestamp": 1367.8881460241973,
+      "frame_id": 158761,
+      "payload": {
+        "Image": {
+          "width": 960,
+          "height": 540,
+          "format": "jpeg",
+          "data": ""
+        }
+      }
+    },
+    "left_camera": {
+      "sensor_id": "left_camera",
+      "sensor_type": "camera",
+      "timestamp": 1367.8683832250535,
+      "frame_id": 158759,
+      "payload": {
+        "Image": {
+          "width": 960,
+          "height": 540,
+          "format": "jpeg",
+          "data": ""
+        }
+      }
+    }
+  },
+  "vehicle_states": {
+    "ego": {
+      "speed_mps": 6.451742172241211,
+      "light_state_bits": 0,
+      "turn_signal": "off"
+    }
+  },
+  "sync_meta": {
+    "reference_sensor_id": "top_camera",
+    "window_size": 0.11704620994474768,
+    "motion_intensity": 0.3661532228361369,
+    "time_offsets": {
+      "top_camera": 0.0,
+      "left_camera": -0.018885979598816136,
+      "right_camera": -0.010594371574591399,
+      "imu": -0.004123801009379629
+    },
+    "kf_residuals": {
+      "right_camera": -0.001005543161457196,
+      "left_camera": 0.009078840267257051,
+      "imu": -0.005958184514908944,
+      "top_camera": 0.0
+    },
+    "quality_scores": {
+      "imu": 0.6780419698882623,
+      "right_camera": 0.9635390207542719,
+      "top_camera": 0.9993896484375,
+      "left_camera": 0.8141708153046151
+    },
+    "alignment_errors": {
+      "top_camera": 0.0,
+      "right_camera": 0.010223828387779577,
+      "imu": 0.0018647968604454945,
+      "left_camera": 0.021695019507433244
+    },
+    "missing_sensors": [],
+    "dropped_count": 746,
+    "out_of_order_count": 0
   }
 }

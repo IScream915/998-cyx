@@ -88,5 +88,6 @@ Top-3 预测:
 字段映射规则：
 - `frame_id`：取消息顶层 `frame_id`（必须可转为整数）
 - `image`：取 `frames.top_camera.payload.Image.data`（必须为非空 base64 字符串）
+- `speed`：取 `vehicle_states.ego.speed_mps` 并转换为 `km/h`，公式 `speed = round(speed_mps * 3.6)`
 
 非法消息会记录明确字段路径并跳过，服务保持持续运行。
