@@ -8,10 +8,7 @@ function renderModuleCardBody(body, components, metricRows, payload) {
 
 export function mount(container, { components }) {
   const state = {
-    scenarioIndex: 0,
     frameIndex: 0,
-    playing: false,
-    timerId: null,
   };
 
   const listeners = [];
@@ -21,24 +18,8 @@ export function mount(container, { components }) {
       <article class="card fullflow-top">
         <header class="card-head">
           <div>
-            <h3 class="card-title">场景播放与联动控制</h3>
-            <p class="card-subtitle">帧序列模拟视频播放，右侧同步展示模块输出</p>
+            <h3 class="card-title">场景联动展示</h3>
           </div>
-          <span id="play-state-badge" class="badge">未播放</span>
-        </header>
-        <div class="card-body">
-          <div class="fullflow-top-row">
-            <label>
-              <span class="card-subtitle">选择场景</span>
-              <select id="fullflow-scene-select" class="select"></select>
-            </label>
-            <div class="btn-row">
-              <button id="fullflow-play-btn" class="btn is-primary" type="button">播放</button>
-              <button id="fullflow-pause-btn" class="btn" type="button">暂停</button>
-              <button id="fullflow-reset-btn" class="btn" type="button">重置</button>
-            </div>
-          </div>
-        </div>
       </article>
 
       <section class="fullflow-main">
@@ -46,7 +27,6 @@ export function mount(container, { components }) {
           <header class="card-head">
             <div>
               <h3 class="card-title">驾驶场景帧序列</h3>
-              <p id="stage-desc" class="card-subtitle"></p>
             </div>
             <span id="frame-badge" class="badge mono"></span>
           </header>
@@ -70,7 +50,6 @@ export function mount(container, { components }) {
           <header class="card-head">
             <div>
               <h3 class="card-title">模块输出实时面板</h3>
-              <p class="card-subtitle">A / B / CD / E 当前帧数据</p>
             </div>
           </header>
           <div class="card-body module-grid">
@@ -120,15 +99,9 @@ export function mount(container, { components }) {
     </section>
   `;
 
-  const sceneSelect = container.querySelector("#fullflow-scene-select");
-  const playBtn = container.querySelector("#fullflow-play-btn");
-  const pauseBtn = container.querySelector("#fullflow-pause-btn");
-  const resetBtn = container.querySelector("#fullflow-reset-btn");
   const progress = container.querySelector("#fullflow-progress");
 
-  const playStateBadge = container.querySelector("#play-state-badge");
   const stageImage = container.querySelector("#stage-image");
-  const stageDesc = container.querySelector("#stage-desc");
   const frameBadge = container.querySelector("#frame-badge");
   const stageTimeBadge = container.querySelector("#stage-time-badge");
   const stageSceneBadge = container.querySelector("#stage-scene-badge");
@@ -143,16 +116,7 @@ export function mount(container, { components }) {
   const logList = container.querySelector("#fullflow-log-list");
 
   function currentScenario() {
-    return FULLFLOW_SCENARIOS[state.scenarioIndex];
-  }
-
-  function stopPlayback() {
-    if (state.timerId !== null) {
-      window.clearInterval(state.timerId);
-      state.timerId = null;
-    }
-    state.playing = false;
-    playStateBadge.textContent = "已暂停";
+    return FULLFLOW_SCENARIOS[0];
   }
 
   function pushFrameLogs(timelineEntry) {
@@ -174,7 +138,6 @@ export function mount(container, { components }) {
     progress.value = String(state.frameIndex);
 
     stageImage.src = frame.src;
-    stageDesc.textContent = `${scenario.description} · 间隔 ${scenario.frameIntervalMs}ms`;
     frameBadge.textContent = `frame_id ${timelineEntry.frameId}`;
     stageTimeBadge.textContent = frame.ts;
     stageSceneBadge.textContent = scenario.name;
@@ -246,63 +209,10 @@ export function mount(container, { components }) {
     }
   }
 
-  function startPlayback() {
-    const scenario = currentScenario();
-    if (state.playing) {
-      return;
-    }
-
-    if (state.frameIndex >= scenario.frames.length - 1) {
-      state.frameIndex = 0;
-      logList.innerHTML = "";
-    }
-
-    state.playing = true;
-    playStateBadge.textContent = "播放中";
-
-    state.timerId = window.setInterval(() => {
-      const active = currentScenario();
-      if (state.frameIndex >= active.frames.length - 1) {
-        stopPlayback();
-        playStateBadge.textContent = "已完成";
-        return;
-      }
-      state.frameIndex += 1;
-      renderCurrentFrame({ appendLogs: true });
-    }, scenario.frameIntervalMs);
-  }
-
-  function switchScenario(index) {
-    stopPlayback();
-    state.scenarioIndex = index;
-    state.frameIndex = 0;
-    logList.innerHTML = "";
-    playStateBadge.textContent = "未播放";
-    renderCurrentFrame({ appendLogs: true });
-  }
-
-  for (const [index, scenario] of FULLFLOW_SCENARIOS.entries()) {
-    const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = scenario.name;
-    sceneSelect.appendChild(option);
-  }
-
   function bind(target, eventName, handler) {
     target.addEventListener(eventName, handler);
     listeners.push(() => target.removeEventListener(eventName, handler));
   }
-
-  bind(sceneSelect, "change", (event) => {
-    const next = Number.parseInt(event.target.value, 10);
-    if (!Number.isNaN(next)) {
-      switchScenario(next);
-    }
-  });
-
-  bind(playBtn, "click", startPlayback);
-  bind(pauseBtn, "click", stopPlayback);
-  bind(resetBtn, "click", () => switchScenario(state.scenarioIndex));
 
   bind(progress, "input", (event) => {
     const next = Number.parseInt(event.target.value, 10);
@@ -318,11 +228,9 @@ export function mount(container, { components }) {
     renderCurrentFrame({ appendLogs: true });
   });
 
-  sceneSelect.value = String(state.scenarioIndex);
   renderCurrentFrame({ appendLogs: true });
 
   return () => {
-    stopPlayback();
     for (const off of listeners) {
       off();
     }

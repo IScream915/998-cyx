@@ -2,16 +2,16 @@ export const NAV_ITEMS = [
   {
     key: "fullflow",
     label: "全流程展示",
-    desc: "A/B/CD/E 协同演示",
+    desc: "协同演示",
     title: "全流程展示",
-    subtitle: "选择场景并播放帧序列，查看各模块输出与语音提示",
+    subtitle: "",
   },
   {
     key: "module-b",
     label: "模块B展示",
-    desc: "场景分类与热力图预留",
+    desc: "场景分类与热力图",
     title: "模块B展示",
-    subtitle: "左侧原始场景，右侧热力图占位窗口",
+    subtitle: "",
   },
   {
     key: "module-c",
