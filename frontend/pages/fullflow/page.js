@@ -47,6 +47,13 @@ function normalizeConfidence(value) {
   return parsed;
 }
 
+function formatBooleanFlag(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return "-";
+}
+
 export function mount(container, { components }) {
   const state = {
     socket: null,
@@ -104,10 +111,10 @@ export function mount(container, { components }) {
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleD 盲区监测</h4>
-                <span class="badge mono">D</span>
+                <h4>moduleC 盲区监测</h4>
+                <span class="badge mono">C</span>
               </div>
-              <div id="card-module-a" class="module-card-body"></div>
+              <div id="card-module-c" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
@@ -146,7 +153,7 @@ export function mount(container, { components }) {
   const frameBadge = container.querySelector("#frame-badge");
   const stageTimeBadge = container.querySelector("#stage-time-badge");
   const stageSceneBadge = container.querySelector("#stage-scene-badge");
-  const cardA = container.querySelector("#card-module-a");
+  const cardC = container.querySelector("#card-module-c");
   const cardB = container.querySelector("#card-module-b");
   const cardD = container.querySelector("#card-module-d");
   const cardE = container.querySelector("#card-module-e");
@@ -163,11 +170,25 @@ export function mount(container, { components }) {
 
   function renderStaticCards() {
     renderModuleMetricBody(
-      cardA,
+      cardC,
       components,
       [
-        { label: "状态", value: "占位" },
-        { label: "说明", value: "当前未接入实时盲区监测数据" },
+        { label: "状态", value: "等待moduleC输出" },
+        { label: "tracked_pedestrians", value: "-" },
+      ],
+    );
+  }
+
+  function renderModuleC(moduleCPayload, fallbackFrameId) {
+    const frameId = moduleCPayload?.frame_id ?? fallbackFrameId;
+    const trackedPedestrians = moduleCPayload?.tracked_pedestrians;
+
+    renderModuleMetricBody(
+      cardC,
+      components,
+      [
+        { label: "frame_id", value: String(frameId ?? "-") },
+        { label: "tracked_pedestrians", value: formatBooleanFlag(trackedPedestrians) },
       ],
     );
   }
@@ -277,6 +298,19 @@ export function mount(container, { components }) {
     pushLog(`接收模块D输出 frame_id=${Math.trunc(frameId)}，已更新moduleD面板`);
   }
 
+  function renderCFrame(payload) {
+    const frameId = toNumber(payload?.frame_id);
+    if (frameId === null) {
+      pushLog("收到c_frame但frame_id非法，已忽略");
+      return;
+    }
+
+    const moduleCPayload =
+      payload?.moduleC && typeof payload.moduleC === "object" ? payload.moduleC : {};
+    renderModuleC(moduleCPayload, Math.trunc(frameId));
+    pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
+  }
+
   function renderEFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
@@ -327,7 +361,7 @@ export function mount(container, { components }) {
       }
       state.reconnectAttempt = 0;
       setWsStatus("已连接", "success");
-      pushLog("WebSocket 已连接，等待A/B配对帧");
+      pushLog("WebSocket 已连接，等待A/B配对帧与moduleC输出");
     });
 
     socket.addEventListener("message", (event) => {
@@ -350,6 +384,10 @@ export function mount(container, { components }) {
       }
       if (evt === "d_frame") {
         renderDFrame(payload);
+        return;
+      }
+      if (evt === "c_frame") {
+        renderCFrame(payload);
         return;
       }
       if (evt === "e_frame") {
@@ -423,6 +461,7 @@ export function mount(container, { components }) {
   }
 
   renderStaticCards();
+  renderModuleC({}, null);
   renderModuleB({}, null);
   renderModuleD({}, null);
   renderModuleE({}, null);
