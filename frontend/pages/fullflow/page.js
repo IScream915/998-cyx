@@ -407,11 +407,33 @@ export function mount(container, { components }) {
     }
   }
 
+  async function switchModuleCToZmqMode() {
+    try {
+      const response = await fetch("/api/module-c/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "zmq" }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const payload = await response.json().catch(() => ({}));
+      if (payload?.ok === false) {
+        throw new Error(payload?.error || "切换失败");
+      }
+      pushLog("已将 moduleC 切换到 ZMQ 输入模式");
+    } catch (error) {
+      console.warn("[fullflow] 切换 moduleC 到 ZMQ 模式失败:", error);
+      pushLog(`moduleC模式回切失败: ${error?.message ?? "unknown error"}`);
+    }
+  }
+
   renderStaticCards();
   renderModuleB({}, null);
   renderModuleC({}, null);
   renderModuleE({}, null);
   switchModuleBToZmqMode();
+  switchModuleCToZmqMode();
   connectWebSocket();
 
   return () => {

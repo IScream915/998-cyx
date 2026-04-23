@@ -6,7 +6,7 @@
 - 可从任意工作目录启动
 - 默认监听 0.0.0.0，便于本地/服务器访问
 - 提供场景目录查询 API
-- 代理 moduleB 控制接口，供前端同源调用
+- 代理 moduleB/moduleC 控制接口，供前端同源调用
 """
 
 from __future__ import annotations
@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=4173, help="监听端口，默认 4173")
     parser.add_argument("--module_b_control_host", default="127.0.0.1", help="moduleB控制接口地址")
     parser.add_argument("--module_b_control_port", type=int, default=5056, help="moduleB控制接口端口")
+    parser.add_argument("--module_c_control_host", default="127.0.0.1", help="moduleC控制接口地址")
+    parser.add_argument("--module_c_control_port", type=int, default=5057, help="moduleC控制接口端口")
     return parser
 
 
@@ -58,6 +60,8 @@ def _build_handler(
     scenes_root: Path,
     module_b_control_host: str,
     module_b_control_port: int,
+    module_c_control_host: str,
+    module_c_control_port: int,
 ):
     class FrontendHandler(SimpleHTTPRequestHandler):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -128,8 +132,17 @@ def _build_handler(
                 frames.append(rel)
             return frames
 
-        def _proxy_module_b(self, method: str, target_path: str, payload: dict[str, Any] | None = None) -> None:
-            target_url = f"http://{module_b_control_host}:{module_b_control_port}{target_path}"
+        def _proxy_module_control(
+            self,
+            *,
+            module_name: str,
+            host: str,
+            port: int,
+            method: str,
+            target_path: str,
+            payload: dict[str, Any] | None = None,
+        ) -> None:
+            target_url = f"http://{host}:{port}{target_path}"
             req_data: bytes | None = None
             headers = {"Accept": "application/json"}
             if payload is not None:
@@ -143,7 +156,7 @@ def _build_handler(
                     try:
                         decoded = json.loads(raw.decode("utf-8"))
                     except Exception:
-                        decoded = {"ok": False, "error": "moduleB 返回了非JSON响应"}
+                        decoded = {"ok": False, "error": f"{module_name} 返回了非JSON响应"}
                     status = int(resp.getcode() or 200)
                     self._send_json(status, decoded if isinstance(decoded, dict) else {"ok": True, "data": decoded})
                     return
@@ -152,13 +165,13 @@ def _build_handler(
                 try:
                     decoded = json.loads(raw.decode("utf-8"))
                 except Exception:
-                    decoded = {"ok": False, "error": raw.decode("utf-8", errors="replace") or "moduleB 请求失败"}
+                    decoded = {"ok": False, "error": raw.decode("utf-8", errors="replace") or f"{module_name} 请求失败"}
                 self._send_json(exc.code, decoded if isinstance(decoded, dict) else {"ok": False, "error": str(decoded)})
                 return
             except Exception as exc:
                 self._send_json(
                     HTTPStatus.BAD_GATEWAY,
-                    {"ok": False, "error": f"moduleB 控制服务不可用: {exc}"},
+                    {"ok": False, "error": f"{module_name} 控制服务不可用: {exc}"},
                 )
                 return
 
@@ -195,7 +208,23 @@ def _build_handler(
                 return
 
             if path == "/api/module-b/state":
-                self._proxy_module_b("GET", "/state")
+                self._proxy_module_control(
+                    module_name="moduleB",
+                    host=module_b_control_host,
+                    port=module_b_control_port,
+                    method="GET",
+                    target_path="/state",
+                )
+                return
+
+            if path == "/api/module-c/state":
+                self._proxy_module_control(
+                    module_name="moduleC",
+                    host=module_c_control_host,
+                    port=module_c_control_port,
+                    method="GET",
+                    target_path="/state",
+                )
                 return
 
             super().do_GET()
@@ -208,6 +237,9 @@ def _build_handler(
                 "/api/module-b/mode",
                 "/api/module-b/scene",
                 "/api/module-b/player",
+                "/api/module-c/mode",
+                "/api/module-c/scene",
+                "/api/module-c/player",
             }:
                 self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
                 return
@@ -219,13 +251,65 @@ def _build_handler(
                 return
 
             if path == "/api/module-b/mode":
-                self._proxy_module_b("POST", "/mode", payload)
+                self._proxy_module_control(
+                    module_name="moduleB",
+                    host=module_b_control_host,
+                    port=module_b_control_port,
+                    method="POST",
+                    target_path="/mode",
+                    payload=payload,
+                )
                 return
             if path == "/api/module-b/scene":
-                self._proxy_module_b("POST", "/scene", payload)
+                self._proxy_module_control(
+                    module_name="moduleB",
+                    host=module_b_control_host,
+                    port=module_b_control_port,
+                    method="POST",
+                    target_path="/scene",
+                    payload=payload,
+                )
                 return
             if path == "/api/module-b/player":
-                self._proxy_module_b("POST", "/player", payload)
+                self._proxy_module_control(
+                    module_name="moduleB",
+                    host=module_b_control_host,
+                    port=module_b_control_port,
+                    method="POST",
+                    target_path="/player",
+                    payload=payload,
+                )
+                return
+
+            if path == "/api/module-c/mode":
+                self._proxy_module_control(
+                    module_name="moduleC",
+                    host=module_c_control_host,
+                    port=module_c_control_port,
+                    method="POST",
+                    target_path="/mode",
+                    payload=payload,
+                )
+                return
+            if path == "/api/module-c/scene":
+                self._proxy_module_control(
+                    module_name="moduleC",
+                    host=module_c_control_host,
+                    port=module_c_control_port,
+                    method="POST",
+                    target_path="/scene",
+                    payload=payload,
+                )
+                return
+            if path == "/api/module-c/player":
+                self._proxy_module_control(
+                    module_name="moduleC",
+                    host=module_c_control_host,
+                    port=module_c_control_port,
+                    method="POST",
+                    target_path="/player",
+                    payload=payload,
+                )
                 return
 
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
@@ -244,6 +328,8 @@ def main() -> None:
         scenes_root=scenes_root,
         module_b_control_host=args.module_b_control_host,
         module_b_control_port=args.module_b_control_port,
+        module_c_control_host=args.module_c_control_host,
+        module_c_control_port=args.module_c_control_port,
     )
 
     server = ThreadingHTTPServer((args.host, args.port), handler)
@@ -251,6 +337,9 @@ def main() -> None:
     print(f"[frontend] 场景目录API: {scenes_root}")
     print(
         f"[frontend] moduleB 控制代理 -> http://{args.module_b_control_host}:{args.module_b_control_port}"
+    )
+    print(
+        f"[frontend] moduleC 控制代理 -> http://{args.module_c_control_host}:{args.module_c_control_port}"
     )
     if args.host in ("0.0.0.0", "::"):
         print(f"[frontend] 绑定地址: http://{args.host}:{args.port}")

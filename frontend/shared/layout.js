@@ -16,9 +16,9 @@ export const NAV_ITEMS = [
   {
     key: "module-c",
     label: "模块C展示",
-    desc: "检测模块预留页面",
+    desc: "本地序列与检测统计",
     title: "模块C展示",
-    subtitle: "当前为占位页，等待接入模块C能力",
+    subtitle: "",
   },
   {
     key: "module-d",

@@ -125,12 +125,31 @@ class ABWsBridge:
         return compact
 
     def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
-        return {
+        compact = {
             "frame_id": frame_id,
             "num_traffic_signs": self._to_non_negative_int(payload.get("num_traffic_signs")),
             "num_pedestrians": self._to_non_negative_int(payload.get("num_pedestrians")),
             "num_vehicles": self._to_non_negative_int(payload.get("num_vehicles")),
         }
+        source_mode = payload.get("source_mode")
+        if isinstance(source_mode, str):
+            compact["source_mode"] = source_mode
+        scene_folder = payload.get("scene_folder")
+        if isinstance(scene_folder, str):
+            compact["scene_folder"] = scene_folder
+        image_relpath = payload.get("image_relpath")
+        if isinstance(image_relpath, str):
+            compact["image_relpath"] = image_relpath
+        frame_index = self._to_non_negative_int(payload.get("frame_index"))
+        if frame_index is not None:
+            compact["frame_index"] = frame_index
+        frame_total = self._to_non_negative_int(payload.get("frame_total"))
+        if frame_total is not None:
+            compact["frame_total"] = frame_total
+        yolo_overlay_base64 = payload.get("yolo_overlay_base64")
+        if isinstance(yolo_overlay_base64, str) and yolo_overlay_base64:
+            compact["yolo_overlay_base64"] = yolo_overlay_base64
+        return compact
 
     def _parse_json_message(self, frames: list[bytes], subscribed_topic: str) -> tuple[str, dict[str, Any]]:
         if not frames:

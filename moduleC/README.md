@@ -1,12 +1,11 @@
 # moduleC 订阅+检测+发布端
 
-订阅 `moduleA` 在 `tcp://localhost:5051` 发布的 `Frame` 消息，
-使用消息顶层 `frame_id` 作为当前帧号，并从 `frames.top_camera.payload.Image.data` 读取图像（base64 编码 jpg）直接调用 `coreDetector` 进行检测（不落盘二次保存），
-再将结果发布到 `tcp://localhost:5053` 供 `moduleE` 订阅。
+`moduleC/mock_module_c.py` 现支持与 moduleB 一致的双输入模式：
 
-发布消息格式：
-- 保留 `frame_id`
-- 其余字段与 `coreDetector` 检测输出字段兼容（如 `success`、`image_size`、`traffic_signs`、`pedestrians`、`vehicles` 等）
+- `zmq` 模式：订阅 moduleA 的 `Frame`（默认 `tcp://localhost:5051`）
+- `local` 模式：读取 `frontend/assets/scenes/<scene>` 本地图片序列
+
+检测后统一发布到 `tcp://*:5053`（topic 默认 `Frame`）。
 
 ## 启动
 
@@ -14,23 +13,49 @@
 python3 moduleC/mock_module_c.py
 ```
 
-## 可选参数
+默认启动能力：
+
+- ZeroMQ 发布：`tcp://*:5053`（topic `Frame`）
+- 控制接口：`http://127.0.0.1:5057`
+
+## 控制接口
+
+- `GET /state`
+- `POST /mode`，参数：`{"mode":"zmq"|"local"}`
+- `POST /scene`，参数：`{"scene":"<folder>"}`
+- `POST /player`，参数：`{"action":"play"|"pause"|"reset"}`
+
+## 发布字段
+
+保留原有检测字段：
+
+- `frame_id`
+- `image_size`
+- `traffic_signs` / `num_traffic_signs`
+- `pedestrians` / `num_pedestrians`
+- `vehicles` / `num_vehicles`
+
+新增：
+
+- `source_mode`：`zmq` 或 `local`
+- local 模式附带：`scene_folder`、`image_relpath`、`frame_index`、`frame_total`
+
+## 常用参数
 
 - `--endpoint`：订阅地址，默认 `tcp://localhost:5051`
 - `--topic`：订阅 topic，默认 `Frame`
 - `--publish_bind`：发布地址，默认 `tcp://*:5053`
 - `--publish_topic`：发布 topic，默认 `Frame`
+- `--publish_rate_hz`：发布限速，默认 `0`（不限制）
 - `--timeout_ms`：接收超时，默认 `1000`
-- `--sign-model`：交通标志模型路径
-- `--scene-model`：场景模型路径
-- `--conf`：置信度阈值，默认 `0.25`
-- `--iou`：IoU 阈值，默认 `0.45`
-- `--img-size`：推理尺寸，默认 `640`
-- `--device`：推理设备（`cuda:0`/`cpu`）
-- `--disable-ocr`：禁用数字类交通标志 OCR 主识别（默认启用 OCR）
-- `--ocr-min-conf`：OCR 主识别置信度阈值，默认 `0.4`
-- `--save-vis`：保存可视化检测图
-- `--vis-dir`：可视化输出目录（与 `--save-vis` 配合，默认写入 `moduleC/coreDetector/outputs`）
+- `--reconnect_delay`：重连等待秒数，默认 `1.0`
+- `--local_scenes_root`：本地场景根目录，默认 `frontend/assets/scenes`
+- `--local_rate_hz`：local 播放速率，默认 `2.0`
+- `--control_host`：控制接口地址，默认 `127.0.0.1`
+- `--control_port`：控制接口端口，默认 `5057`
+- `--sign-model` / `--scene-model` / `--conf` / `--iou` / `--img-size` / `--device`
+- `--disable-ocr` / `--ocr-min-conf`
+- `--save-vis` / `--vis-dir`
 
 ## OCR 启动检查
 

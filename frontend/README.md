@@ -21,7 +21,18 @@ python3 moduleB/run.py
 - ZeroMQ 发布：`tcp://*:5052`（topic `Frame`）
 - 控制接口：`http://127.0.0.1:5056`
 
-### 2) 启动前端静态服务（含 API 代理）
+### 2) 启动 moduleC（含控制接口）
+
+```bash
+python3 moduleC/mock_module_c.py
+```
+
+默认会启动：
+
+- ZeroMQ 发布：`tcp://*:5053`（topic `Frame`）
+- 控制接口：`http://127.0.0.1:5057`
+
+### 3) 启动前端静态服务（含 API 代理）
 
 ```bash
 python3 frontend/server.py
@@ -38,7 +49,7 @@ python3 frontend/server.py
 http://127.0.0.1:4173
 ```
 
-### 3) 启动桥接服务（全流程页实时）
+### 4) 启动桥接服务（全流程页实时）
 
 ```bash
 python3 frontend/ws_bridge.py
@@ -64,17 +75,23 @@ python3 frontend/ws_bridge.py
 - 禁止 `..`、绝对路径和越界目录
 - 仅允许白名单后缀
 
-### moduleB 控制代理 API
+### moduleB/moduleC 控制代理 API
 
 - `GET /api/module-b/state` -> 代理 `GET http://127.0.0.1:5056/state`
 - `POST /api/module-b/mode` -> 代理 `/mode`
 - `POST /api/module-b/scene` -> 代理 `/scene`
 - `POST /api/module-b/player` -> 代理 `/player`
+- `GET /api/module-c/state` -> 代理 `GET http://127.0.0.1:5057/state`
+- `POST /api/module-c/mode` -> 代理 `/mode`
+- `POST /api/module-c/scene` -> 代理 `/scene`
+- `POST /api/module-c/player` -> 代理 `/player`
 
 可通过参数改代理目标：
 
 ```bash
-python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_port 5056
+python3 frontend/server.py \
+  --module_b_control_host 127.0.0.1 --module_b_control_port 5056 \
+  --module_c_control_host 127.0.0.1 --module_c_control_port 5057
 ```
 
 ---
@@ -92,6 +109,19 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 
 ---
 
+## 模块C展示页行为
+
+`模块C展示` 页面已切换为“后端驱动本地图片流”：
+
+1. 进入页面后自动调用 `POST /api/module-c/mode {"mode":"local"}`。
+2. 场景下拉框会动态读取 `frontend/assets/scenes` 子目录。
+3. 选择场景后调用 `POST /api/module-c/scene`。
+4. 点击播放/暂停/重置分别调用 `POST /api/module-c/player`。
+5. 页面通过 WebSocket `c_frame` 事件实时刷新图片与 `num_traffic_signs/num_pedestrians/num_vehicles`。
+6. 右侧“YOLO识别框预留窗口”当前为预留容器，后续接入检测框叠加图。
+
+---
+
 ## 全流程页行为
 
 `全流程展示` 页面 mount 时会调用：
@@ -101,6 +131,7 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 ```
 
 即自动把 moduleB 切回 A-ZMQ 输入模式。
+即自动把 moduleC 切回 A-ZMQ 输入模式。
 
 ---
 
@@ -110,6 +141,7 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 
 - `ab_frame`
 - `c_frame`
+  - local 模式可带：`moduleC.scene_folder/image_relpath/frame_index/frame_total`
 - `e_frame`
 - `status`
 
@@ -124,11 +156,12 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 
 ```text
 frontend/
-  server.py                  # 静态服务 + 场景API + moduleB控制代理
+  server.py                  # 静态服务 + 场景API + moduleB/moduleC 控制代理
   ws_bridge.py               # A+B+C+E ZMQ -> WebSocket
   pages/
-    fullflow/page.js         # 全流程页（进入时回切moduleB到zmq）
+    fullflow/page.js         # 全流程页（进入时回切moduleB/moduleC到zmq）
     module-b/page.js         # 模块B页（本地模式 + 实时b_frame）
+    module-c/page.js         # 模块C页（本地模式 + 实时c_frame）
   assets/
     scenes/                  # 本地图片流场景目录
 ```
