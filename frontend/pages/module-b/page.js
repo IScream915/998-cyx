@@ -90,16 +90,21 @@ export function mount(container, { components }) {
           <header class="card-head">
             <div>
               <h3 class="card-title">热力图预留窗口</h3>
-              <p class="card-subtitle">后端热力图能力接入后直接替换该区域</p>
+              <p class="card-subtitle">Grad-CAM 叠加热图实时展示</p>
             </div>
           </header>
           <div class="card-body">
             <div class="heatmap-frame">
-              <div class="scanning-line" aria-hidden="true"></div>
-              <div class="heatmap-placeholder">
-                <h4>模块B 热力图待接入</h4>
-                <p>当前版本保留展示容器，不接入后端实时热力图流。</p>
-              </div>
+              <img
+                id="module-b-heatmap-image"
+                class="heatmap-image"
+                alt="模块B热力图"
+                loading="lazy"
+                src="${EMPTY_PIXEL}"
+                hidden
+              />
+              <div id="module-b-heatmap-scanline" class="scanning-line" aria-hidden="true"></div>
+              <div id="module-b-heatmap-placeholder" class="heatmap-placeholder"></div>
             </div>
           </div>
         </article>
@@ -130,6 +135,9 @@ export function mount(container, { components }) {
   const sceneDesc = container.querySelector("#module-b-scene-desc");
   const frameBadge = container.querySelector("#module-b-frame-badge");
   const image = container.querySelector("#module-b-image");
+  const heatmapImage = container.querySelector("#module-b-heatmap-image");
+  const heatmapScanline = container.querySelector("#module-b-heatmap-scanline");
+  const heatmapPlaceholder = container.querySelector("#module-b-heatmap-placeholder");
   const progressLabel = container.querySelector("#module-b-progress-label");
   const progressPercent = container.querySelector("#module-b-progress-percent");
 
@@ -177,6 +185,22 @@ export function mount(container, { components }) {
         { label: "speed", value: "-" },
       ]),
     );
+  }
+
+  function renderHeatmap(heatmapBase64) {
+    const hasHeatmap = typeof heatmapBase64 === "string" && heatmapBase64.trim().length > 0;
+    if (hasHeatmap) {
+      heatmapImage.src = `data:image/jpeg;base64,${heatmapBase64}`;
+      heatmapImage.hidden = false;
+      heatmapPlaceholder.hidden = true;
+      heatmapScanline.hidden = true;
+      return;
+    }
+
+    heatmapImage.hidden = true;
+    heatmapImage.src = EMPTY_PIXEL;
+    heatmapPlaceholder.hidden = false;
+    heatmapScanline.hidden = false;
   }
 
   function setPlayStateText(text, tone = "") {
@@ -233,11 +257,18 @@ export function mount(container, { components }) {
     const imageRelpath = typeof moduleBPayload.image_relpath === "string" ? moduleBPayload.image_relpath : "";
     const frameIndex = toNumber(moduleBPayload.frame_index);
     const frameTotal = toNumber(moduleBPayload.frame_total);
+    const heatmapBase64 =
+      typeof moduleBPayload.heatmap_base64 === "string" ? moduleBPayload.heatmap_base64 : "";
 
     if (imageRelpath) {
       const cleaned = imageRelpath.replace(/^\/+/, "");
       image.src = `./${cleaned}`;
       image.alt = `模块B场景帧 ${frameId}`;
+    }
+    if (sourceMode === "local") {
+      renderHeatmap(heatmapBase64);
+    } else {
+      renderHeatmap("");
     }
 
     frameBadge.textContent = `frame_id ${frameId}`;
@@ -461,6 +492,7 @@ export function mount(container, { components }) {
   });
 
   renderEmptyMetrics();
+  renderHeatmap("");
 
   (async () => {
     try {

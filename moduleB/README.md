@@ -118,7 +118,8 @@ python3 -m moduleB.run
   "scene_folder": "scene-1",
   "image_relpath": "assets/scenes/scene-1/frame-1.jpg",
   "frame_index": 0,
-  "frame_total": 3
+  "frame_total": 3,
+  "heatmap_base64": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
 }
 ```
 
@@ -127,6 +128,7 @@ python3 -m moduleB.run
 - 兼容字段 `conference` 保留
 - 新增 `confidence`（同值）
 - `source_mode=zmq` 时不附带本地播放字段
+- `source_mode=local` 时会附带 `heatmap_base64`（Grad-CAM 原图叠加热图，JPEG base64）
 
 ---
 

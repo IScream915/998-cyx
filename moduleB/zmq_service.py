@@ -1,4 +1,6 @@
 import argparse
+import base64
+import io
 import json
 import logging
 import math
@@ -24,7 +26,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import torch
 import zmq
+import numpy as np
 from PIL import Image
+import torch.nn.functional as F
 
 from imageProcess.codec import decode_base64_to_pil_image
 from moduleB.inference import load_model, predict, preprocess_pil_image
@@ -173,6 +177,111 @@ def _to_public_relpath(path: Path, scenes_root: Path, scene_folder: str) -> str:
         return f"assets/scenes/{rel_to_scenes.as_posix()}"
     except Exception:
         return f"assets/scenes/{scene_folder}/{path.name}"
+
+
+def _encode_pil_image_to_base64(image: Image.Image, fmt: str = "JPEG", quality: int = 85) -> str:
+    buffer = io.BytesIO()
+    image.save(buffer, format=fmt, quality=quality)
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+def _apply_jet_colormap(cam_map: np.ndarray) -> np.ndarray:
+    """将 [0,1] CAM 映射为 RGB 热力图（近似 JET）。"""
+    x = np.clip(cam_map.astype(np.float32), 0.0, 1.0)
+
+    r = np.clip(1.5 - np.abs(4.0 * x - 3.0), 0.0, 1.0)
+    g = np.clip(1.5 - np.abs(4.0 * x - 2.0), 0.0, 1.0)
+    b = np.clip(1.5 - np.abs(4.0 * x - 1.0), 0.0, 1.0)
+
+    rgb = np.stack([r, g, b], axis=-1)
+    return (rgb * 255.0).astype(np.uint8)
+
+
+class GradCamGenerator:
+    """基于 model.blocks 输出特征的 Grad-CAM 生成器。"""
+
+    def __init__(self, model: torch.nn.Module, target_module: torch.nn.Module, device: torch.device) -> None:
+        self.model = model
+        self.device = device
+
+        self._activations: Optional[torch.Tensor] = None
+        self._gradients: Optional[torch.Tensor] = None
+
+        self._forward_handle = target_module.register_forward_hook(self._forward_hook)
+        self._backward_handle = target_module.register_full_backward_hook(self._backward_hook)
+
+    def _forward_hook(self, _module: torch.nn.Module, _inputs: Any, output: torch.Tensor) -> None:
+        self._activations = output
+
+    def _backward_hook(
+        self,
+        _module: torch.nn.Module,
+        _grad_input: tuple[torch.Tensor, ...],
+        grad_output: tuple[torch.Tensor, ...],
+    ) -> None:
+        if grad_output and grad_output[0] is not None:
+            self._gradients = grad_output[0]
+
+    def _build_overlay(self, image: Image.Image) -> Image.Image:
+        if self._activations is None or self._gradients is None:
+            raise RuntimeError("Grad-CAM 特征或梯度为空")
+
+        # [1, C, H, W]
+        activations = self._activations
+        gradients = self._gradients
+
+        weights = gradients.mean(dim=(2, 3), keepdim=True)
+        raw_cam = (weights * activations).sum(dim=1, keepdim=True)
+        cam = F.relu(raw_cam)
+
+        if cam.max().item() <= 0:
+            # 兜底策略：正响应全零时使用绝对值，避免整帧热力图缺失
+            cam = raw_cam.abs()
+            if cam.max().item() <= 0:
+                raise RuntimeError("Grad-CAM 响应全为0")
+
+        cam = F.interpolate(
+            cam,
+            size=(image.height, image.width),
+            mode="bilinear",
+            align_corners=False,
+        )
+        cam = cam[0, 0]
+        cam = cam - cam.min()
+        cam = cam / (cam.max() + 1e-8)
+        cam_np = cam.detach().cpu().numpy()
+
+        heatmap_rgb = _apply_jet_colormap(cam_np)
+        heatmap_img = Image.fromarray(heatmap_rgb, mode="RGB")
+        base = image.convert("RGB")
+        return Image.blend(base, heatmap_img, alpha=0.45)
+
+    def predict_with_gradcam(
+        self,
+        image_tensor: torch.Tensor,
+        original_image: Image.Image,
+        class_names: list[str],
+    ) -> tuple[str, float, str]:
+        self._activations = None
+        self._gradients = None
+
+        input_tensor = image_tensor.to(self.device)
+        self.model.zero_grad(set_to_none=True)
+
+        logits = self.model(input_tensor)
+        probabilities = F.softmax(logits, dim=1)
+        confidence, predicted = torch.max(probabilities, 1)
+        class_idx = int(predicted.item())
+
+        score = logits[:, class_idx].sum()
+        score.backward()
+
+        overlay = self._build_overlay(original_image)
+        heatmap_b64 = _encode_pil_image_to_base64(overlay, fmt="JPEG", quality=85)
+
+        scene = class_names[class_idx]
+        confidence_pct = float(confidence.item() * 100.0)
+        return scene, confidence_pct, heatmap_b64
 
 
 class ModuleBRuntimeState:
@@ -494,6 +603,16 @@ def main() -> None:
     if model is None:
         raise RuntimeError("模型加载失败，请检查检查点文件")
 
+    gradcam_generator: Optional[GradCamGenerator] = None
+    if hasattr(model, "blocks"):
+        try:
+            gradcam_generator = GradCamGenerator(model, getattr(model, "blocks"), device)
+            logging.info("Grad-CAM 已启用，目标层: model.blocks（仅local模式）")
+        except Exception as exc:
+            logging.warning("Grad-CAM 初始化失败，将跳过热力图: %s", exc)
+    else:
+        logging.warning("模型缺少 blocks 层，Grad-CAM 将不可用")
+
     runtime_state = ModuleBRuntimeState(scenes_root=scenes_root)
 
     control_handler = _create_control_handler(runtime_state)
@@ -540,20 +659,19 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
 
     def publish_result(
-        frame_id: int,
-        image: Image.Image,
-        speed: float,
         *,
+        frame_id: int,
+        scene: str,
+        confidence: float,
+        speed: float,
         source_mode: str,
         scene_folder: Optional[str] = None,
         image_relpath: Optional[str] = None,
         frame_index: Optional[int] = None,
         frame_total: Optional[int] = None,
+        heatmap_base64: Optional[str] = None,
     ) -> None:
         nonlocal last_publish_at
-
-        image_tensor, _ = preprocess_pil_image(image, args.img_size)
-        scene, confidence, _ = predict(model, image_tensor, device, class_names)
 
         result: dict[str, Any] = {
             "frame_id": frame_id,
@@ -569,6 +687,8 @@ def main() -> None:
             result["image_relpath"] = image_relpath
             result["frame_index"] = frame_index
             result["frame_total"] = frame_total
+            if isinstance(heatmap_base64, str) and heatmap_base64:
+                result["heatmap_base64"] = heatmap_base64
 
         result_json = json.dumps(result, ensure_ascii=False)
 
@@ -594,7 +714,15 @@ def main() -> None:
                     frame_id, image_b64 = _extract_frame_and_image(payload)
                     speed = _extract_speed_kmh(payload)
                     image = decode_base64_to_pil_image(image_b64)
-                    publish_result(frame_id, image, speed, source_mode="zmq")
+                    image_tensor, _ = preprocess_pil_image(image, args.img_size)
+                    scene, confidence, _ = predict(model, image_tensor, device, class_names)
+                    publish_result(
+                        frame_id=frame_id,
+                        scene=scene,
+                        confidence=float(confidence),
+                        speed=float(speed),
+                        source_mode="zmq",
+                    )
                     runtime_state.clear_error()
                 except zmq.Again:
                     continue
@@ -622,15 +750,33 @@ def main() -> None:
 
             try:
                 image = Image.open(local_task["image_path"]).convert("RGB")
+
+                image_tensor, _ = preprocess_pil_image(image, args.img_size)
+                heatmap_base64: Optional[str] = None
+                if gradcam_generator is not None:
+                    try:
+                        scene, confidence, heatmap_base64 = gradcam_generator.predict_with_gradcam(
+                            image_tensor=image_tensor,
+                            original_image=image,
+                            class_names=class_names,
+                        )
+                    except Exception as exc:
+                        logging.warning("frame_id=%s 热力图生成失败，降级为普通推理: %s", local_task["frame_id"], exc)
+                        scene, confidence, _ = predict(model, image_tensor, device, class_names)
+                else:
+                    scene, confidence, _ = predict(model, image_tensor, device, class_names)
+
                 publish_result(
                     frame_id=int(local_task["frame_id"]),
-                    image=image,
+                    scene=scene,
+                    confidence=float(confidence),
                     speed=float(args.local_speed_kmh),
                     source_mode="local",
                     scene_folder=local_task.get("scene_folder"),
                     image_relpath=local_task.get("image_relpath"),
                     frame_index=local_task.get("frame_index"),
                     frame_total=local_task.get("frame_total"),
+                    heatmap_base64=heatmap_base64,
                 )
                 runtime_state.clear_error()
             except Exception as exc:

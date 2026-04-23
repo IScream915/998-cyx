@@ -88,6 +88,7 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 3. 选择场景后调用 `POST /api/module-b/scene`。
 4. 点击播放/暂停/重置分别调用 `POST /api/module-b/player`。
 5. 页面通过 WebSocket `b_frame` 事件实时刷新图片与 `scene/confidence/speed`。
+6. `source_mode=local` 时，若 `moduleB.heatmap_base64` 存在，会在右侧“热力图预留窗口”实时展示 Grad-CAM 叠加热图。
 
 ---
 
@@ -115,6 +116,7 @@ python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_
 新增：
 
 - `b_frame`（每条 moduleB 消息都推送，不依赖 A/B 配对）
+  - 可选字段：`moduleB.heatmap_base64`（local 模式热力图）
 
 ---
 

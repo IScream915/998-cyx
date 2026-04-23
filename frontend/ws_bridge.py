@@ -119,6 +119,9 @@ class ABWsBridge:
         frame_total = self._to_non_negative_int(payload.get("frame_total"))
         if frame_total is not None:
             compact["frame_total"] = frame_total
+        heatmap_base64 = payload.get("heatmap_base64")
+        if isinstance(heatmap_base64, str) and heatmap_base64:
+            compact["heatmap_base64"] = heatmap_base64
         return compact
 
     def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
