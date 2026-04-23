@@ -15,6 +15,18 @@
 python3 moduleE/mock_module_e.py
 ```
 
+用于“模块E独立展示（仿真链路）”时，建议单独启动一个 demo 进程并使用隔离端口：
+
+```bash
+python3 moduleE/mock_module_e.py \
+  --endpoints tcp://127.0.0.1:6062,tcp://127.0.0.1:6063 \
+  --topic SimFrame \
+  --publish_bind tcp://127.0.0.1:6064 \
+  --publish_topic SimFrame \
+  --control_host 127.0.0.1 \
+  --control_port 5064
+```
+
 ## 处理规则
 
 - `frame_match`：只在同一 `frame_id` 的 B 和 D 消息都到齐时输出结果
@@ -25,7 +37,7 @@ python3 moduleE/mock_module_e.py
 
 ## 可选参数
 
-- `--endpoints`：订阅地址列表（逗号分隔），默认 `tcp://localhost:5052,tcp://localhost:5053`
+- `--endpoints`：订阅地址列表（逗号分隔，第1个按 B 输入处理，第2个按 D 输入处理），默认 `tcp://localhost:5052,tcp://localhost:5053`
 - `--topic`：订阅 topic，默认 `Frame`
 - `--timeout_ms`：轮询等待时间，默认 `10`
 - `--match_timeout_ms`：同一 frame_id 配对超时，默认 `1500`
@@ -37,3 +49,10 @@ python3 moduleE/mock_module_e.py
 - `--kb_path`：规则库 JSON 路径，默认 `moduleE/gb5768_rules.json`
 - `--st_model`：句向量模型本地路径或模型名，默认 `moduleE/model/paraphrase-multilingual-MiniLM-L12-v2`
 - `--default_speed`：B 未提供车速时的默认速度，默认 `60.0`
+- `--control_host`：本地控制接口监听地址，默认 `127.0.0.1`
+- `--control_port`：本地控制接口监听端口，默认 `5064`
+
+## 控制接口
+
+- `GET /state`：返回当前运行状态、最近输出、模式状态、以及引擎内部状态（含最近决策、冷却表规模、TTS队列长度）
+- `POST /reset`：清理冷却状态、OCR 去重缓存和待播报队列，便于重复演示同一触发模板

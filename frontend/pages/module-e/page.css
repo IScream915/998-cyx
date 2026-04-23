@@ -1,49 +1,88 @@
-.placeholder-page {
+.module-e-page {
   display: grid;
   gap: 12px;
 }
 
-.placeholder-title {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: 22px;
+.module-e-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.placeholder-desc {
-  margin: 10px 0 0;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.5;
+.module-e-field {
+  display: grid;
+  gap: 6px;
 }
 
-.placeholder-grid {
+.module-e-actions {
+  margin-top: 12px;
+}
+
+.module-e-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.module-e-bottom {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.placeholder-item {
-  border: 1px dashed var(--line-strong);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  padding: 12px;
-}
-
-.placeholder-item h4 {
+.module-e-log-list {
   margin: 0;
-  color: var(--text-strong);
-  font-size: 14px;
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
 }
 
-.placeholder-item p {
-  margin: 8px 0 0;
+.module-e-log-list .log-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.module-e-log-list .log-item.warn {
+  border-color: rgba(244, 211, 139, 0.55);
+}
+
+.module-e-log-list .log-item.danger {
+  border-color: rgba(239, 159, 159, 0.6);
+}
+
+.module-e-log-list .log-item.success {
+  border-color: rgba(141, 214, 183, 0.55);
+}
+
+.module-e-log-list .log-ts {
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
-@media (max-width: 900px) {
-  .placeholder-grid {
+.module-e-log-list .log-text {
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+@media (max-width: 1100px) {
+  .module-e-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .module-e-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .module-e-form-grid {
     grid-template-columns: 1fr;
   }
 }

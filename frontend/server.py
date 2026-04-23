@@ -104,6 +104,43 @@ def build_parser() -> argparse.ArgumentParser:
         default=5.0,
         help="moduleC WebSocket 最大推送帧率",
     )
+    parser.add_argument(
+        "--module_e_sim_b_bind",
+        default="tcp://127.0.0.1:6062",
+        help="moduleE仿真B输入发布地址（frontend bind）",
+    )
+    parser.add_argument(
+        "--module_e_sim_d_bind",
+        default="tcp://127.0.0.1:6063",
+        help="moduleE仿真D输入发布地址（frontend bind）",
+    )
+    parser.add_argument(
+        "--module_e_sim_output_endpoint",
+        default="tcp://127.0.0.1:6064",
+        help="moduleE仿真输出订阅地址（frontend connect）",
+    )
+    parser.add_argument(
+        "--module_e_sim_topic",
+        default="SimFrame",
+        help="moduleE仿真输入输出topic",
+    )
+    parser.add_argument(
+        "--module_e_sim_start_frame_id",
+        type=int,
+        default=10001,
+        help="moduleE仿真起始frame_id",
+    )
+    parser.add_argument(
+        "--module_e_control_host",
+        default="127.0.0.1",
+        help="moduleE-demo控制接口地址",
+    )
+    parser.add_argument(
+        "--module_e_control_port",
+        type=int,
+        default=5064,
+        help="moduleE-demo控制接口端口",
+    )
     return parser
 
 
@@ -221,6 +258,197 @@ def _resolve_browser_endpoint(frontend_cfg: dict[str, Any], override: str | None
         ]
     )
     return candidates[0] if candidates else None
+
+
+MODULE_E_SIM_PARAM_KEYS = {"scene", "speed", "limit_speed", "num_pedestrians", "num_vehicles"}
+MODULE_E_SIM_LIMIT_SPEEDS = {20, 40, 60, 80, 100, 120}
+MODULE_E_SIM_TEMPLATES: dict[str, dict[str, Any]] = {
+    "p0_blind_spot": {
+        "label": "P0盲区高危",
+        "scene_choices": {"city street", "highway", "tunnel", "residential", "unknown"},
+        "defaults": {
+            "scene": "city street",
+            "speed": 38.0,
+            "limit_speed": 60,
+            "num_pedestrians": 1,
+            "num_vehicles": 4,
+        },
+    },
+    "p1_overspeed": {
+        "label": "P1超速提醒",
+        "scene_choices": {"city street", "highway", "unknown"},
+        "defaults": {
+            "scene": "highway",
+            "speed": 98.0,
+            "limit_speed": 80,
+            "num_pedestrians": 0,
+            "num_vehicles": 10,
+        },
+    },
+    "p2_warning": {
+        "label": "P2普通预警",
+        "scene_choices": {"city street", "highway", "residential", "unknown"},
+        "defaults": {
+            "scene": "city street",
+            "speed": 46.0,
+            "limit_speed": 60,
+            "num_pedestrians": 2,
+            "num_vehicles": 7,
+        },
+    },
+    "p3_silent": {
+        "label": "P3静默建议",
+        "scene_choices": {"city street", "highway", "unknown"},
+        "defaults": {
+            "scene": "highway",
+            "speed": 78.0,
+            "limit_speed": 80,
+            "num_pedestrians": 0,
+            "num_vehicles": 6,
+        },
+    },
+}
+
+
+def _parse_module_e_positive_int(value: Any, *, field_name: str, max_value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} 必须是整数") from exc
+    if parsed < 0:
+        raise ValueError(f"{field_name} 不能为负数")
+    if parsed > max_value:
+        raise ValueError(f"{field_name} 超出允许范围(0~{max_value})")
+    return parsed
+
+
+def _parse_module_e_speed(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("speed 必须是数字") from exc
+    if parsed < 0 or parsed > 220:
+        raise ValueError("speed 超出允许范围(0~220)")
+    return parsed
+
+
+def _normalize_module_e_simulate_payload(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    template_id = payload.get("template_id")
+    if not isinstance(template_id, str) or not template_id.strip():
+        raise ValueError("template_id 不能为空")
+    template_id = template_id.strip()
+    template = MODULE_E_SIM_TEMPLATES.get(template_id)
+    if template is None:
+        raise ValueError(f"template_id 不支持: {template_id}")
+
+    raw_params = payload.get("params", {})
+    if raw_params is None:
+        raw_params = {}
+    if not isinstance(raw_params, dict):
+        raise ValueError("params 必须是对象")
+
+    unknown_keys = sorted([key for key in raw_params.keys() if key not in MODULE_E_SIM_PARAM_KEYS])
+    if unknown_keys:
+        raise ValueError(f"存在不支持的参数: {', '.join(unknown_keys)}")
+
+    defaults = dict(template["defaults"])
+    scene_val = raw_params.get("scene", defaults["scene"])
+    if not isinstance(scene_val, str) or not scene_val.strip():
+        raise ValueError("scene 必须是非空字符串")
+    scene = scene_val.strip()
+    allowed_scenes = set(template["scene_choices"])
+    if scene not in allowed_scenes:
+        raise ValueError(f"scene 不支持: {scene}，可选: {', '.join(sorted(allowed_scenes))}")
+
+    speed = _parse_module_e_speed(raw_params.get("speed", defaults["speed"]))
+    limit_speed = _parse_module_e_positive_int(
+        raw_params.get("limit_speed", defaults["limit_speed"]),
+        field_name="limit_speed",
+        max_value=160,
+    )
+    if limit_speed not in MODULE_E_SIM_LIMIT_SPEEDS:
+        raise ValueError("limit_speed 仅支持 20/40/60/80/100/120")
+
+    num_pedestrians = _parse_module_e_positive_int(
+        raw_params.get("num_pedestrians", defaults["num_pedestrians"]),
+        field_name="num_pedestrians",
+        max_value=20,
+    )
+    num_vehicles = _parse_module_e_positive_int(
+        raw_params.get("num_vehicles", defaults["num_vehicles"]),
+        field_name="num_vehicles",
+        max_value=60,
+    )
+
+    normalized = {
+        "scene": scene,
+        "speed": speed,
+        "limit_speed": limit_speed,
+        "num_pedestrians": num_pedestrians,
+        "num_vehicles": num_vehicles,
+    }
+    return template_id, normalized
+
+
+def _build_module_e_sim_messages(
+    *,
+    frame_id: int,
+    template_id: str,
+    normalized_params: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    scene = str(normalized_params["scene"])
+    speed = float(normalized_params["speed"])
+    limit_speed = int(normalized_params["limit_speed"])
+    num_pedestrians = int(normalized_params["num_pedestrians"])
+    num_vehicles = int(normalized_params["num_vehicles"])
+
+    b_payload: dict[str, Any] = {
+        "frame_id": frame_id,
+        "scene": scene,
+        "speed": speed,
+        "confidence": 0.95,
+        "source_mode": "module_e_sim",
+    }
+    d_payload: dict[str, Any] = {
+        "frame_id": frame_id,
+        "num_pedestrians": num_pedestrians,
+        "num_vehicles": num_vehicles,
+        "source_mode": "module_e_sim",
+    }
+
+    if template_id == "p0_blind_spot":
+        d_payload.update(
+            {
+                "num_traffic_signs": 0,
+                "traffic_signs": [],
+                "tracked_pedestrians": {"risk_level": "HIGH", "in_blind_spot": True},
+            }
+        )
+    elif template_id == "p1_overspeed":
+        d_payload.update(
+            {
+                "num_traffic_signs": 1,
+                "traffic_signs": [{"class_name": f"Speed Limit {limit_speed} km/h", "confidence": 0.93}],
+                "tracked_pedestrians": False,
+            }
+        )
+    elif template_id == "p2_warning":
+        d_payload.update(
+            {
+                "num_traffic_signs": 1,
+                "traffic_signs": [{"class_name": "前方施工", "confidence": 0.91}],
+                "tracked_pedestrians": False,
+            }
+        )
+    else:  # p3_silent
+        d_payload.update(
+            {
+                "num_traffic_signs": 1,
+                "traffic_signs": [{"class_name": f"限速{limit_speed}", "confidence": 0.92}],
+                "tracked_pedestrians": False,
+            }
+        )
+    return b_payload, d_payload
 
 
 def _extract_image_payload(sensor_payload: Any) -> dict[str, Any] | None:
@@ -705,6 +933,280 @@ def _build_module_c_bridge_from_args(args: argparse.Namespace) -> _ModuleCLiveBr
     )
 
 
+class _ModuleESimGateway:
+    def __init__(
+        self,
+        *,
+        sim_b_bind: str,
+        sim_d_bind: str,
+        sim_output_endpoint: str,
+        sim_topic: str,
+        start_frame_id: int,
+        control_host: str,
+        control_port: int,
+    ) -> None:
+        self.sim_b_bind = sim_b_bind
+        self.sim_d_bind = sim_d_bind
+        self.sim_output_endpoint = sim_output_endpoint
+        self.sim_topic = sim_topic
+        self.control_host = control_host
+        self.control_port = int(control_port)
+        self._next_frame_id = max(1, int(start_frame_id))
+
+        self._state_lock = threading.Lock()
+        self._send_lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._broadcaster = _FrameBroadcaster(push_fps=10.0)
+
+        self._ctx: Any = None
+        self._socket_b: Any = None
+        self._socket_d: Any = None
+        self._socket_e: Any = None
+
+        self.published_count = 0
+        self.received_count = 0
+        self.invalid_output_count = 0
+        self.last_frame_id: int | None = None
+        self.last_input: dict[str, Any] | None = None
+        self.last_output: dict[str, Any] | None = None
+        self.last_error: str | None = None
+        self.last_reset_at: float | None = None
+
+    def start(self) -> None:
+        _require_zmq()
+        import zmq
+
+        self._ctx = zmq.Context()
+        self._socket_b = self._ctx.socket(zmq.PUB)
+        self._socket_d = self._ctx.socket(zmq.PUB)
+        self._socket_e = self._ctx.socket(zmq.SUB)
+
+        self._socket_b.bind(self.sim_b_bind)
+        self._socket_d.bind(self.sim_d_bind)
+        self._socket_e.setsockopt(zmq.RCVTIMEO, 250)
+        self._socket_e.setsockopt_string(zmq.SUBSCRIBE, self.sim_topic)
+        self._socket_e.connect(self.sim_output_endpoint)
+
+        self._broadcaster.start()
+        self._thread = threading.Thread(
+            target=self._consume_output_stream,
+            name="module-e-sim-output-consumer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=3.0)
+        self._broadcaster.stop()
+        for socket_obj in (self._socket_b, self._socket_d, self._socket_e):
+            if socket_obj is None:
+                continue
+            try:
+                socket_obj.close(linger=0)
+            except Exception:
+                pass
+        self._socket_b = None
+        self._socket_d = None
+        self._socket_e = None
+        if self._ctx is not None:
+            try:
+                self._ctx.term()
+            except Exception:
+                pass
+            self._ctx = None
+
+    def register_client(self) -> queue.Queue[dict[str, Any]]:
+        return self._broadcaster.register_client()
+
+    def unregister_client(self, client_queue: queue.Queue[dict[str, Any]]) -> None:
+        self._broadcaster.unregister_client(client_queue)
+
+    def simulate(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
+        if self._socket_b is None or self._socket_d is None:
+            raise RuntimeError("moduleE 仿真发布器未启动")
+        demo_state, demo_error = self._call_demo_api(method="GET", path="/state")
+        if demo_state is None:
+            raise RuntimeError(demo_error or "moduleE-demo 不可用，无法触发仿真")
+
+        template_id, normalized_params = _normalize_module_e_simulate_payload(raw_payload)
+        with self._state_lock:
+            frame_id = self._next_frame_id
+            self._next_frame_id += 1
+
+        b_payload, d_payload = _build_module_e_sim_messages(
+            frame_id=frame_id,
+            template_id=template_id,
+            normalized_params=normalized_params,
+        )
+        topic_bytes = self.sim_topic.encode("utf-8")
+        b_raw = json.dumps(b_payload, ensure_ascii=False).encode("utf-8")
+        d_raw = json.dumps(d_payload, ensure_ascii=False).encode("utf-8")
+        with self._send_lock:
+            self._socket_b.send_multipart([topic_bytes, b_raw])
+            self._socket_d.send_multipart([topic_bytes, d_raw])
+
+        with self._state_lock:
+            self.published_count += 1
+            self.last_frame_id = frame_id
+            self.last_input = {
+                "template_id": template_id,
+                "params": dict(normalized_params),
+                "frame_id": frame_id,
+                "b_payload": b_payload,
+                "d_payload": d_payload,
+            }
+
+        return {
+            "ok": True,
+            "frame_id": frame_id,
+            "template_id": template_id,
+            "topic": self.sim_topic,
+            "params": dict(normalized_params),
+        }
+
+    def _call_demo_api(
+        self,
+        *,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        target_url = f"http://{self.control_host}:{self.control_port}{path}"
+        headers = {"Accept": "application/json"}
+        req_data: bytes | None = None
+        if payload is not None:
+            req_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(target_url, method=method, headers=headers, data=req_data)
+        try:
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                raw = resp.read()
+                try:
+                    decoded = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    return None, "moduleE-demo 返回了非JSON响应"
+                if not isinstance(decoded, dict):
+                    return None, "moduleE-demo 返回JSON格式非法"
+                if decoded.get("ok") is False:
+                    return None, str(decoded.get("error") or "moduleE-demo 返回失败状态")
+                return decoded, None
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            return None, f"moduleE-demo HTTP {exc.code}: {raw or 'request failed'}"
+        except Exception as exc:
+            return None, f"moduleE-demo 不可用: {exc}"
+
+    def reset_remote(self) -> dict[str, Any]:
+        payload, error = self._call_demo_api(method="POST", path="/reset", payload={})
+        if payload is None:
+            raise RuntimeError(error or "moduleE-demo reset 失败")
+        reset_at = payload.get("reset_at")
+        reset_ts = None
+        if isinstance(reset_at, (int, float)):
+            reset_ts = float(reset_at)
+        if reset_ts is None:
+            reset_ts = time.time()
+        with self._state_lock:
+            self.last_reset_at = reset_ts
+        return {"ok": True, "reset_at": reset_ts}
+
+    def demo_ready(self) -> tuple[bool, str]:
+        payload, error = self._call_demo_api(method="GET", path="/state")
+        if payload is not None:
+            return True, ""
+        return False, str(error or "moduleE-demo 不可用")
+
+    def health_snapshot(self) -> dict[str, Any]:
+        with self._state_lock:
+            snapshot: dict[str, Any] = {
+                "sim_topic": self.sim_topic,
+                "sim_b_bind": self.sim_b_bind,
+                "sim_d_bind": self.sim_d_bind,
+                "sim_output_endpoint": self.sim_output_endpoint,
+                "published_count": self.published_count,
+                "received_count": self.received_count,
+                "invalid_output_count": self.invalid_output_count,
+                "last_frame_id": self.last_frame_id,
+                "last_input": self.last_input,
+                "last_output": self.last_output,
+                "last_error": self.last_error,
+                "last_reset_at": self.last_reset_at,
+                "next_frame_id": self._next_frame_id,
+                "client_count": self._broadcaster.client_count(),
+                "templates": [
+                    {
+                        "template_id": template_id,
+                        "label": str(template.get("label", template_id)),
+                        "scene_choices": sorted(list(template.get("scene_choices", []))),
+                        "defaults": dict(template.get("defaults", {})),
+                    }
+                    for template_id, template in MODULE_E_SIM_TEMPLATES.items()
+                ],
+            }
+        demo_state, demo_error = self._call_demo_api(method="GET", path="/state")
+        snapshot["demo_connected"] = demo_state is not None
+        snapshot["demo_state"] = demo_state
+        if demo_error:
+            snapshot["demo_error"] = demo_error
+        return snapshot
+
+    def _consume_output_stream(self) -> None:
+        import zmq
+
+        if self._socket_e is None:
+            return
+        while not self._stop_event.is_set():
+            try:
+                frames = self._socket_e.recv_multipart()
+            except zmq.Again:
+                continue
+            except Exception as exc:
+                with self._state_lock:
+                    self.last_error = f"moduleE仿真输出接收失败: {type(exc).__name__}: {exc}"
+                continue
+
+            try:
+                topic, payload_bytes = _recv_topic_and_payload(frames, self.sim_topic)
+                if topic != self.sim_topic:
+                    continue
+                payload = json.loads(payload_bytes.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("payload 顶层必须是对象")
+                frame_id = int(payload.get("frame_id"))
+                event_payload = {
+                    "event": "e_frame",
+                    "frame_id": frame_id,
+                    "moduleE": payload,
+                    "ts": time.time(),
+                }
+            except Exception as exc:
+                with self._state_lock:
+                    self.invalid_output_count += 1
+                    self.last_error = f"moduleE仿真输出解析失败: {type(exc).__name__}: {exc}"
+                continue
+
+            with self._state_lock:
+                self.received_count += 1
+                self.last_output = payload
+                self.last_frame_id = frame_id
+            self._broadcaster.submit(event_payload)
+
+
+def _build_module_e_gateway_from_args(args: argparse.Namespace) -> _ModuleESimGateway:
+    return _ModuleESimGateway(
+        sim_b_bind=str(args.module_e_sim_b_bind),
+        sim_d_bind=str(args.module_e_sim_d_bind),
+        sim_output_endpoint=str(args.module_e_sim_output_endpoint),
+        sim_topic=str(args.module_e_sim_topic or "SimFrame"),
+        start_frame_id=max(1, int(args.module_e_sim_start_frame_id)),
+        control_host=str(args.module_e_control_host),
+        control_port=int(args.module_e_control_port),
+    )
+
+
 def _build_handler(
     frontend_dir: Path,
     scenes_root: Path,
@@ -713,6 +1215,7 @@ def _build_handler(
     module_d_control_host: str,
     module_d_control_port: int,
     module_c_bridge: _ModuleCLiveBridge,
+    module_e_gateway: _ModuleESimGateway,
 ):
     class FrontendHandler(SimpleHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -865,6 +1368,38 @@ def _build_handler(
             finally:
                 module_c_bridge.unregister_client(client_queue)
 
+        def _handle_module_e_websocket(self) -> None:
+            ready, reason = module_e_gateway.demo_ready()
+            if not ready:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": reason})
+                return
+            upgrade = str(self.headers.get("Upgrade", "")).strip().lower()
+            version = str(self.headers.get("Sec-WebSocket-Version", "")).strip()
+            key = str(self.headers.get("Sec-WebSocket-Key", "")).strip()
+            if upgrade != "websocket" or not key or version != "13":
+                self.send_error(HTTPStatus.BAD_REQUEST, "Expected a WebSocket upgrade request.")
+                return
+
+            client_queue = module_e_gateway.register_client()
+            self.close_connection = True
+            self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", _websocket_accept_value(key))
+            self.end_headers()
+            try:
+                while True:
+                    try:
+                        payload = client_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        continue
+                    event_text = json.dumps(payload, ensure_ascii=False)
+                    self.connection.sendall(_encode_websocket_text_frame(event_text))
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                module_e_gateway.unregister_client(client_queue)
+
         def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
@@ -874,6 +1409,12 @@ def _build_handler(
                 return
             if path == "/api/module-c/ws":
                 self._handle_module_c_websocket()
+                return
+            if path == "/api/module-e/ws":
+                self._handle_module_e_websocket()
+                return
+            if path == "/api/module-e/state":
+                self._send_json(HTTPStatus.OK, {"ok": True, "state": module_e_gateway.health_snapshot()})
                 return
 
             if path == "/api/scenes":
@@ -937,6 +1478,8 @@ def _build_handler(
                 "/api/module-d/mode",
                 "/api/module-d/scene",
                 "/api/module-d/player",
+                "/api/module-e/simulate",
+                "/api/module-e/reset",
             }:
                 self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
                 return
@@ -1008,6 +1551,31 @@ def _build_handler(
                     payload=payload,
                 )
                 return
+            if path == "/api/module-e/simulate":
+                try:
+                    result = module_e_gateway.simulate(payload)
+                except ValueError as exc:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                    return
+                except RuntimeError as exc:
+                    self._send_json(HTTPStatus.BAD_GATEWAY, {"ok": False, "error": str(exc)})
+                    return
+                except Exception as exc:
+                    self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+                    return
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if path == "/api/module-e/reset":
+                try:
+                    result = module_e_gateway.reset_remote()
+                except RuntimeError as exc:
+                    self._send_json(HTTPStatus.BAD_GATEWAY, {"ok": False, "error": str(exc)})
+                    return
+                except Exception as exc:
+                    self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+                    return
+                self._send_json(HTTPStatus.OK, result)
+                return
 
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
 
@@ -1022,6 +1590,8 @@ def main() -> None:
 
     module_c_bridge = _build_module_c_bridge_from_args(args)
     module_c_bridge.start()
+    module_e_gateway = _build_module_e_gateway_from_args(args)
+    module_e_gateway.start()
 
     handler = _build_handler(
         frontend_dir=frontend_dir,
@@ -1031,6 +1601,7 @@ def main() -> None:
         module_d_control_host=args.module_d_control_host,
         module_d_control_port=args.module_d_control_port,
         module_c_bridge=module_c_bridge,
+        module_e_gateway=module_e_gateway,
     )
 
     server = ThreadingHTTPServer((args.host, args.port), handler)
@@ -1048,6 +1619,12 @@ def main() -> None:
     print(f"[frontend] moduleC input: {', '.join(module_c_bridge.input_endpoints)}")
     print(f"[frontend] moduleC output: {module_c_bridge.output_endpoint}")
     print("[frontend] moduleC API: GET /api/module-c/health, GET /api/module-c/ws")
+    print(f"[frontend] moduleE sim topic: {module_e_gateway.sim_topic}")
+    print(f"[frontend] moduleE sim PUB(B): {module_e_gateway.sim_b_bind}")
+    print(f"[frontend] moduleE sim PUB(D): {module_e_gateway.sim_d_bind}")
+    print(f"[frontend] moduleE sim SUB(E): {module_e_gateway.sim_output_endpoint}")
+    print(f"[frontend] moduleE demo control: http://{module_e_gateway.control_host}:{module_e_gateway.control_port}")
+    print("[frontend] moduleE API: GET /api/module-e/state, GET /api/module-e/ws, POST /api/module-e/simulate, POST /api/module-e/reset")
 
     if args.host in ("0.0.0.0", "::"):
         print(f"[frontend] 绑定地址: http://{args.host}:{args.port}")
@@ -1068,6 +1645,7 @@ def main() -> None:
     finally:
         server.server_close()
         module_c_bridge.stop()
+        module_e_gateway.stop()
         print("[frontend] 已停止")
 
 

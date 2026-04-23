@@ -2,7 +2,11 @@ import argparse
 import json
 import signal
 import sys
+import threading
 import time
+import urllib.parse
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -19,14 +23,6 @@ if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
 from TrafficReminder import FusionDecisionEngine
-
-
-def source_label(endpoint: str) -> str:
-    if endpoint.endswith(":5052"):
-        return "B"
-    if endpoint.endswith(":5053"):
-        return "D"
-    return endpoint
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -137,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--endpoints",
         default="tcp://localhost:5052,tcp://localhost:5053",
-        help="订阅地址列表，逗号分隔",
+        help="订阅地址列表，逗号分隔（第1个视为B输入，第2个视为D输入）",
     )
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
@@ -176,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="sentence-transformers 模型路径或模型名",
     )
     parser.add_argument("--default_speed", type=float, default=60.0, help="默认车速(km/h)")
+    parser.add_argument("--control_host", default="127.0.0.1", help="moduleE控制接口监听地址")
+    parser.add_argument("--control_port", type=int, default=5064, help="moduleE控制接口监听端口")
     return parser
 
 
@@ -197,27 +195,96 @@ def main() -> None:
     ctx = zmq.Context()
     poller = zmq.Poller()
     sockets = []
-    socket_to_endpoint: Dict[Any, str] = {}
-    for endpoint in endpoints:
+    socket_to_label: Dict[Any, str] = {}
+    for index, endpoint in enumerate(endpoints):
         socket = ctx.socket(zmq.SUB)
         socket.setsockopt_string(zmq.SUBSCRIBE, args.topic)
         socket.connect(endpoint)
         poller.register(socket, zmq.POLLIN)
         sockets.append(socket)
-        socket_to_endpoint[socket] = endpoint
+        role = "B" if index == 0 else "D" if index == 1 else f"EXTRA_{index}"
+        socket_to_label[socket] = role
     publisher = ctx.socket(zmq.PUB)
     publisher.bind(args.publish_bind)
 
     running = True
+    control_lock = threading.Lock()
+    control_state: Dict[str, Any] = {
+        "processed_count": 0,
+        "process_error_count": 0,
+        "last_emit_ts": None,
+        "last_result": None,
+        "last_reset_at": None,
+    }
+    control_server: ThreadingHTTPServer | None = None
+    control_thread: threading.Thread | None = None
+
+    def snapshot_state() -> Dict[str, Any]:
+        with control_lock:
+            state_copy = dict(control_state)
+        state_copy.update(
+            {
+                "mode": effective_mode,
+                "dropped_timeout": dropped_timeout,
+                "mismatch_streak": mismatch_streak,
+                "pending_count": len(pending),
+                "latest_frame_ids": dict(latest_frame_ids),
+                "endpoints": list(endpoints),
+                "topic": args.topic,
+                "publish_bind": args.publish_bind,
+                "publish_topic": args.publish_topic,
+            }
+        )
+        state_copy["engine"] = engine.get_runtime_state()
+        return {"ok": True, "state": state_copy}
 
     def stop_handler(_signum: int, _frame: Any) -> None:
         nonlocal running
         running = False
 
+    class ControlHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def _send_json(self, status: int, payload: Dict[str, Any]) -> None:
+            raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/state":
+                self._send_json(HTTPStatus.OK, snapshot_state())
+                return
+            self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
+
+        def do_POST(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != "/reset":
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
+                return
+            reset_result = engine.reset_runtime_state()
+            reset_at = float(reset_result.get("reset_at", time.time()))
+            with control_lock:
+                control_state["last_reset_at"] = reset_at
+                control_state["last_result"] = None
+            self._send_json(HTTPStatus.OK, {"ok": True, "reset_at": reset_at})
+
+        def log_message(self, _format: str, *_args: Any) -> None:
+            return
+
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
 
+    role_pairs = []
+    for idx, endpoint in enumerate(endpoints):
+        role = "B" if idx == 0 else "D" if idx == 1 else "EXTRA"
+        role_pairs.append(f"{endpoint}={role}")
     print(f"[moduleE] SUB 已连接: {', '.join(endpoints)}, topic={args.topic}")
+    print(f"[moduleE] SUB 端点角色映射: {', '.join(role_pairs)}")
     print(f"[moduleE] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
     print(
         "[moduleE] 融合模式: "
@@ -225,6 +292,7 @@ def main() -> None:
         f"(drop阈值={args.fallback_drop_threshold}, "
         f"mismatch阈值={args.fallback_mismatch_streak})"
     )
+    print(f"[moduleE] 控制接口: http://{args.control_host}:{args.control_port} (/state, /reset)")
     print("[moduleE] 按 Ctrl+C 停止")
 
     pending: Dict[int, Dict[str, Any]] = {}
@@ -241,25 +309,46 @@ def main() -> None:
 
         try:
             engine.update_telematics({"speed": speed})
-            engine.update_perception(perception)
-
+            decision = engine.update_perception(perception)
+            voice_prompt = ""
+            if isinstance(decision.get("voice_prompt"), str):
+                voice_prompt = str(decision.get("voice_prompt", ""))
             result = {
                 "frame_id": frame_id,
                 "status": "processed",
                 "scene": perception.get("scene", "unknown"),
                 "speed": speed,
                 "detected_signs": perception.get("detected_signs", []),
+                "voice_prompt": voice_prompt,
+                "decision": decision,
             }
+            with control_lock:
+                control_state["processed_count"] = int(control_state["processed_count"]) + 1
         except Exception as exc:
             result = {
                 "frame_id": frame_id,
                 "status": "process_error",
                 "error_type": type(exc).__name__,
                 "error": str(exc),
+                "decision": {
+                    "decision_code": "PROCESS_ERROR",
+                    "speak": False,
+                    "priority": None,
+                    "voice_prompt": "",
+                    "match_source": None,
+                    "matched_event_id": None,
+                    "reason": f"exception:{type(exc).__name__}",
+                    "ts": time.time(),
+                },
             }
+            with control_lock:
+                control_state["process_error_count"] = int(control_state["process_error_count"]) + 1
 
         result_text = json.dumps(result, ensure_ascii=False)
         publisher.send_multipart([args.publish_topic.encode("utf-8"), result_text.encode("utf-8")])
+        with control_lock:
+            control_state["last_emit_ts"] = time.time()
+            control_state["last_result"] = result
         print(result_text)
 
     def maybe_switch_to_latest(now: float) -> None:
@@ -288,6 +377,10 @@ def main() -> None:
             print(f"[moduleE] latest模式立即输出一次，frame_id={latest_frame_id}, ts={now:.3f}")
 
     try:
+        control_server = ThreadingHTTPServer((args.control_host, args.control_port), ControlHandler)
+        control_thread = threading.Thread(target=control_server.serve_forever, name="module-e-control-api", daemon=True)
+        control_thread.start()
+
         while running:
             events = dict(poller.poll(args.timeout_ms))
             now = time.monotonic()
@@ -297,8 +390,7 @@ def main() -> None:
                     continue
 
                 frames = socket.recv_multipart()
-                endpoint = socket_to_endpoint[socket]
-                label = source_label(endpoint)
+                label = socket_to_label[socket]
                 if label not in ("B", "D"):
                     continue
 
@@ -346,7 +438,6 @@ def main() -> None:
                     emit_result(frame_id, entry["B"], entry["D"])
                     del pending[frame_id]
 
-            # 超时未配齐的 frame_id 直接丢弃，保证低延迟
             if effective_mode == "frame_match":
                 expire_before = now - (args.match_timeout_ms / 1000.0)
                 expired_ids = [
@@ -359,7 +450,6 @@ def main() -> None:
                     dropped_timeout += 1
                 maybe_switch_to_latest(now)
 
-            # 低频输出统计，便于定位“无输出”是否由超时丢弃导致
             if dropped_timeout > 0 and (now - last_stat_log_ts) >= 1.0:
                 print(
                     f"[moduleE] mode={effective_mode}, 配对超时丢弃累计: {dropped_timeout}, "
@@ -368,6 +458,12 @@ def main() -> None:
                 )
                 last_stat_log_ts = now
     finally:
+        running = False
+        if control_server is not None:
+            control_server.shutdown()
+            control_server.server_close()
+        if control_thread is not None:
+            control_thread.join(timeout=2.0)
         for socket in sockets:
             poller.unregister(socket)
             socket.close(linger=0)

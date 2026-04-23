@@ -1,0 +1,260 @@
+{
+  "frame_id": 128,
+  "image_size": {
+    "width": 960,
+    "height": 540
+  },
+  "traffic_signs": [],
+  "num_traffic_signs": 0,
+  "pedestrians": [
+    {
+      "bbox": [
+        422,
+        271,
+        474,
+        396
+      ],
+      "confidence": 0.9371
+    }
+  ],
+  "num_pedestrians": 1,
+  "vehicles": [
+    {
+      "bbox": [
+        156,
+        246,
+        332,
+        421
+      ],
+      "confidence": 0.9113,
+      "track_id": 21,
+      "side": "left",
+      "class_name": "car"
+    },
+    {
+      "bbox": [
+        628,
+        238,
+        802,
+        414
+      ],
+      "confidence": 0.8945,
+      "track_id": 34,
+      "side": "right",
+      "class_name": "car"
+    }
+  ],
+  "num_vehicles": 2,
+  "tracked_pedestrians": true,
+  "bsd": {
+    "schema_version": "bsd.demo.modulecd.v1",
+    "input_source": "zmq_sync_frame",
+    "ego": {
+      "speed_kmh": 48.6,
+      "left_signal": true,
+      "right_signal": false,
+      "imu_gz": 0.072,
+      "imu_ax": 0.183
+    },
+    "system": {
+      "detector_backend": "multitask_yolo",
+      "detector_device": "cuda:0",
+      "fps": 18.42,
+      "max_alert_level": "WARNING"
+    },
+    "left": {
+      "tracked_count": 1,
+      "alert_count": 1,
+      "zone": {
+        "polygon_px": [
+          [
+            92.0,
+            282.0
+          ],
+          [
+            156.0,
+            188.0
+          ],
+          [
+            286.0,
+            188.0
+          ],
+          [
+            365.0,
+            282.0
+          ],
+          [
+            365.0,
+            539.0
+          ],
+          [
+            92.0,
+            539.0
+          ]
+        ],
+        "level": "WARNING",
+        "scale_used": 1.25,
+        "source": "external_mask",
+        "visible": true
+      },
+      "tracks": [
+        {
+          "track_id": 21,
+          "class_id": 0,
+          "class_name": "car",
+          "confidence": 0.9113,
+          "bbox": [
+            156,
+            246,
+            332,
+            421
+          ],
+          "center_px": [
+            244.0,
+            333.5
+          ],
+          "area_px2": 30800.0,
+          "model_weights": {
+            "cv": 0.61,
+            "ca": 0.18,
+            "ctrv": 0.21
+          },
+          "predictions": [
+            {
+              "horizon_s": 1.0,
+              "point_px": [
+                272.5,
+                318.2
+              ]
+            },
+            {
+              "horizon_s": 2.0,
+              "point_px": [
+                301.8,
+                304.9
+              ]
+            }
+          ]
+        }
+      ],
+      "alerts": [
+        {
+          "track_id": 21,
+          "level": "WARNING",
+          "r_score": 0.73,
+          "time_to_entry_s": 1.64,
+          "bbox": [
+            156,
+            246,
+            332,
+            421
+          ],
+          "model_weights": {
+            "cv": 0.61,
+            "ca": 0.18,
+            "ctrv": 0.21
+          }
+        }
+      ]
+    },
+    "right": {
+      "tracked_count": 1,
+      "alert_count": 0,
+      "zone": {
+        "polygon_px": [
+          [
+            594.0,
+            280.0
+          ],
+          [
+            670.0,
+            189.0
+          ],
+          [
+            805.0,
+            189.0
+          ],
+          [
+            868.0,
+            280.0
+          ],
+          [
+            868.0,
+            539.0
+          ],
+          [
+            594.0,
+            539.0
+          ]
+        ],
+        "level": "SAFE",
+        "scale_used": 1.1,
+        "source": "segmentation",
+        "visible": false
+      },
+      "tracks": [
+        {
+          "track_id": 34,
+          "class_id": 0,
+          "class_name": "car",
+          "confidence": 0.8945,
+          "bbox": [
+            628,
+            238,
+            802,
+            414
+          ],
+          "center_px": [
+            715.0,
+            326.0
+          ],
+          "area_px2": 30624.0,
+          "model_weights": {
+            "cv": 0.56,
+            "ca": 0.17,
+            "ctrv": 0.27
+          },
+          "predictions": [
+            {
+              "horizon_s": 1.0,
+              "point_px": [
+                688.6,
+                318.7
+              ]
+            },
+            {
+              "horizon_s": 2.0,
+              "point_px": [
+                661.2,
+                311.9
+              ]
+            }
+          ]
+        }
+      ],
+      "alerts": []
+    },
+    "overview": {
+      "top_camera_present": true,
+      "left_image_size": {
+        "width": 960,
+        "height": 540
+      },
+      "right_image_size": {
+        "width": 960,
+        "height": 540
+      },
+      "top_image_size": {
+        "width": 960,
+        "height": 540
+      },
+      "sensor_ids": {
+        "left_camera": "left_camera",
+        "right_camera": "right_camera",
+        "top_camera": "top_camera",
+        "imu": "imu",
+        "vehicle_state": "ego"
+      }
+    }
+  }
+}

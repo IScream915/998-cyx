@@ -63,6 +63,18 @@ python3 frontend/ws_bridge.py
 
 默认监听：`ws://0.0.0.0:8765`。
 
+### 6) 启动 moduleE-demo（模块E独立展示仿真链路）
+
+```bash
+python3 moduleE/mock_module_e.py \
+  --endpoints tcp://127.0.0.1:6062,tcp://127.0.0.1:6063 \
+  --topic SimFrame \
+  --publish_bind tcp://*:6064 \
+  --publish_topic SimFrame \
+  --control_host 127.0.0.1 \
+  --control_port 5064
+```
+
 ---
 
 ## frontend/server.py API
@@ -88,6 +100,13 @@ python3 frontend/ws_bridge.py
 - `GET /api/module-c/health`
 - `GET /api/module-c/ws`（WebSocket）
 
+### moduleE 仿真 API（新增）
+
+- `GET /api/module-e/state`
+- `GET /api/module-e/ws`（WebSocket）
+- `POST /api/module-e/simulate`
+- `POST /api/module-e/reset`
+
 可通过参数覆盖 moduleC bridge 配置：
 
 - `--module_c_config`
@@ -98,6 +117,16 @@ python3 frontend/ws_bridge.py
 - `--module_c_merge_timeout_ms`
 - `--module_c_push_fps`
 
+可通过参数覆盖 moduleE 仿真网关配置：
+
+- `--module_e_sim_b_bind`
+- `--module_e_sim_d_bind`
+- `--module_e_sim_output_endpoint`
+- `--module_e_sim_topic`
+- `--module_e_sim_start_frame_id`
+- `--module_e_control_host`
+- `--module_e_control_port`
+
 ---
 
 ## 页面行为
@@ -105,6 +134,7 @@ python3 frontend/ws_bridge.py
 - `模块B展示`：本地图片流 + `b_frame` 实时渲染（含热力图）。
 - `模块C展示`：加载 `pages/module-c`，通过 `/api/module-c/ws` 实时绘制左右双窗 tracker 叠加。
 - `模块D展示`：本地图片流 + `d_frame` 实时渲染。
+- `模块E展示`：通过下拉模板组装仿真 B/D 消息，触发 moduleE demo 输出并展示决策结果。
 - `全流程展示`：继续走 A+B+D+E 链路，不受 moduleC 新接入影响。
 
 ---

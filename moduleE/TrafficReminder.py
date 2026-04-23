@@ -5,7 +5,7 @@ import queue
 import re
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 from scipy.spatial.distance import cosine
 import logging
 import json
@@ -89,6 +89,12 @@ class AsyncTTSManager:
                 self.audio_queue.task_done()
             except queue.Empty:
                 break
+
+    def clear_queue(self):
+        self._clear_queue()
+
+    def queue_size(self) -> int:
+        return self.audio_queue.qsize()
                 
     def stop(self):
         self.is_running = False
@@ -126,6 +132,17 @@ class FusionDecisionEngine:
         
         self.cooldown_tracker = {}
         self.last_processed_ocr = "" 
+        self._state_lock = threading.Lock()
+        self.last_decision: Dict[str, Any] = {
+            "decision_code": "NO_SIGN",
+            "speak": False,
+            "priority": None,
+            "voice_prompt": "",
+            "match_source": None,
+            "matched_event_id": None,
+            "reason": "init",
+            "ts": time.time(),
+        }
 
         print(">> [System] 引擎就绪 (Ready).")
 
@@ -292,13 +309,45 @@ class FusionDecisionEngine:
         self.blackboard.latest_telematics = data
         self.blackboard.last_telematics_time = time.time()
 
-    def update_perception(self, perception_json: dict):
+    def update_perception(self, perception_json: dict) -> Dict[str, Any]:
         """输入接口：接收前端 JSON 并触发仲裁"""
         self.blackboard.latest_perception_json = perception_json
         self.blackboard.last_json_time = time.time()
-        self._evaluate()
+        decision = self._evaluate()
+        self._store_decision(decision)
+        return decision
 
-    def _evaluate(self):
+    def _build_decision(
+        self,
+        *,
+        code: str,
+        speak: bool,
+        priority: Optional[int],
+        voice_prompt: str = "",
+        match_source: Optional[str] = None,
+        matched_event_id: Optional[str] = None,
+        reason: str = "",
+        semantic_score: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "decision_code": code,
+            "speak": bool(speak),
+            "priority": priority,
+            "voice_prompt": voice_prompt,
+            "match_source": match_source,
+            "matched_event_id": matched_event_id,
+            "reason": reason,
+            "ts": time.time(),
+        }
+        if semantic_score is not None:
+            payload["semantic_score"] = float(semantic_score)
+        return payload
+
+    def _store_decision(self, decision: Dict[str, Any]) -> None:
+        with self._state_lock:
+            self.last_decision = dict(decision)
+
+    def _evaluate(self) -> Dict[str, Any]:
         """神经-符号融合仲裁逻辑"""
         current_time = time.time()
         perception = self.blackboard.latest_perception_json
@@ -310,25 +359,55 @@ class FusionDecisionEngine:
         # ----------------------------------------------------
         tracked_obj = perception.get("tracked_pedestrians", {})
         if tracked_obj.get("risk_level") == "HIGH" and tracked_obj.get("in_blind_spot"):
+            voice_prompt = "🚨 警报！盲区发现高危目标，立即避让！"
             if self._can_trigger("P0_BLIND_SPOT", current_time, cooldown=3.0):
-                self._dispatch_alert("🚨 警报！盲区发现高危目标，立即避让！", priority=0)
-            return # 短路返回，无视后面的路牌
+                self._dispatch_alert(voice_prompt, priority=0)
+                return self._build_decision(
+                    code="P0_BLIND_SPOT",
+                    speak=True,
+                    priority=0,
+                    voice_prompt=voice_prompt,
+                    reason="blind_spot_high_risk",
+                )
+            return self._build_decision(
+                code="COOLDOWN_BLOCK",
+                speak=False,
+                priority=0,
+                voice_prompt=voice_prompt,
+                reason="p0_cooldown_blocked",
+            )
 
         # ----------------------------------------------------
         # 仲裁级 2：NLP 路牌解析与状态融合 (Neuro-Symbolic)
         # ----------------------------------------------------
         detected_signs = perception.get("detected_signs", [])
         if not detected_signs:
-            return
+            return self._build_decision(
+                code="NO_SIGN",
+                speak=False,
+                priority=None,
+                reason="detected_signs_empty",
+            )
 
         raw_text, clean_text, chosen_conf = self._pick_sign_text(detected_signs)
         if not clean_text:
-            return
+            return self._build_decision(
+                code="NO_SIGN",
+                speak=False,
+                priority=None,
+                reason="no_valid_sign_text",
+            )
 
         # 性能优化：相同的字符串在短时间内不重复过大模型计算
-        if clean_text == self.last_processed_ocr:
-            return
-        self.last_processed_ocr = clean_text
+        with self._state_lock:
+            if clean_text == self.last_processed_ocr:
+                return self._build_decision(
+                    code="COOLDOWN_BLOCK",
+                    speak=False,
+                    priority=None,
+                    reason="ocr_duplicate_blocked",
+                )
+            self.last_processed_ocr = clean_text
 
         # Step1: 数字硬匹配（仅限速类）
         matched_event = self._hard_match_limit_event(raw_text, clean_text)
@@ -339,7 +418,13 @@ class FusionDecisionEngine:
         if matched_event is None:
             matched_event, semantic_score = self._semantic_match_event(clean_text)
             if matched_event is None:
-                return  # 相似度太低，当做杂音忽略
+                return self._build_decision(
+                    code="NO_MATCH",
+                    speak=False,
+                    priority=None,
+                    reason="semantic_score_too_low",
+                    semantic_score=semantic_score,
+                )
             match_source = "semantic_fallback"
 
         current_scene = perception.get("scene", "unknown")
@@ -359,7 +444,15 @@ class FusionDecisionEngine:
         # 【符号计算】：逻辑门控与校验
         # 校验 1：场景合法性 (有些路牌在特定场景无效)
         if current_scene not in matched_event.applicable_scenes and current_scene != "unknown":
-            return 
+            return self._build_decision(
+                code="NO_MATCH",
+                speak=False,
+                priority=None,
+                match_source=match_source,
+                matched_event_id=matched_event.event_id,
+                reason=f"scene_not_applicable:{current_scene}",
+                semantic_score=semantic_score,
+            )
 
         if semantic_score is None:
             print(
@@ -378,25 +471,7 @@ class FusionDecisionEngine:
             limit_val = int(re.findall(r'\d+', matched_event.standard_text)[0])
             if current_speed > (limit_val + 5):
                 # P1 级：违规超速
-                if self._can_trigger(f"P1_SPEED_{limit_val}", current_time, cooldown=5.0):
-                    tts_content = f"您已超速，当前限速{limit_val}公里"
-                    density_level = self._evaluate_density_risk(current_scene, num_pedestrians, num_vehicles)
-                    density_suffix = self._build_density_suffix(density_level)
-                    if density_suffix:
-                        tts_content = f"{tts_content}，{density_suffix}"
-                    print(
-                        f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
-                        f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
-                    )
-                    self._dispatch_alert(tts_content, priority=1)
-            else:
-                # P3 级：仅 UI 静默提醒
-                print(f"[{time.strftime('%H:%M:%S')}] 🖥️ UI 更新 -> 发现标志: {matched_event.standard_text} (未超速，静默处理)")
-
-        elif matched_event.category == "WARN":
-            # P2 级：普通预警
-            if self._can_trigger(f"P2_WARN_{matched_event.event_id}", current_time, cooldown=10.0):
-                tts_content = matched_event.tts_template
+                tts_content = f"您已超速，当前限速{limit_val}公里"
                 density_level = self._evaluate_density_risk(current_scene, num_pedestrians, num_vehicles)
                 density_suffix = self._build_density_suffix(density_level)
                 if density_suffix:
@@ -405,19 +480,127 @@ class FusionDecisionEngine:
                     f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
                     f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
                 )
+                if self._can_trigger(f"P1_SPEED_{limit_val}", current_time, cooldown=5.0):
+                    self._dispatch_alert(tts_content, priority=1)
+                    return self._build_decision(
+                        code="P1_SPEED",
+                        speak=True,
+                        priority=1,
+                        voice_prompt=tts_content,
+                        match_source=match_source,
+                        matched_event_id=matched_event.event_id,
+                        reason="overspeed_triggered",
+                        semantic_score=semantic_score,
+                    )
+                return self._build_decision(
+                    code="COOLDOWN_BLOCK",
+                    speak=False,
+                    priority=1,
+                    voice_prompt=tts_content,
+                    match_source=match_source,
+                    matched_event_id=matched_event.event_id,
+                    reason="p1_cooldown_blocked",
+                    semantic_score=semantic_score,
+                )
+            else:
+                # P3 级：仅 UI 静默提醒
+                print(f"[{time.strftime('%H:%M:%S')}] 🖥️ UI 更新 -> 发现标志: {matched_event.standard_text} (未超速，静默处理)")
+                return self._build_decision(
+                    code="P3_SILENT",
+                    speak=False,
+                    priority=3,
+                    voice_prompt=f"保持当前车速，检测到{matched_event.standard_text}",
+                    match_source=match_source,
+                    matched_event_id=matched_event.event_id,
+                    reason="speed_within_limit",
+                    semantic_score=semantic_score,
+                )
+
+        elif matched_event.category == "WARN":
+            # P2 级：普通预警
+            tts_content = matched_event.tts_template
+            density_level = self._evaluate_density_risk(current_scene, num_pedestrians, num_vehicles)
+            density_suffix = self._build_density_suffix(density_level)
+            if density_suffix:
+                tts_content = f"{tts_content}，{density_suffix}"
+            print(
+                f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
+                f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
+            )
+            if self._can_trigger(f"P2_WARN_{matched_event.event_id}", current_time, cooldown=10.0):
                 self._dispatch_alert(tts_content, priority=2)
+                return self._build_decision(
+                    code="P2_WARN",
+                    speak=True,
+                    priority=2,
+                    voice_prompt=tts_content,
+                    match_source=match_source,
+                    matched_event_id=matched_event.event_id,
+                    reason="warn_triggered",
+                    semantic_score=semantic_score,
+                )
+            return self._build_decision(
+                code="COOLDOWN_BLOCK",
+                speak=False,
+                priority=2,
+                voice_prompt=tts_content,
+                match_source=match_source,
+                matched_event_id=matched_event.event_id,
+                reason="p2_cooldown_blocked",
+                semantic_score=semantic_score,
+            )
+
+        return self._build_decision(
+            code="NO_MATCH",
+            speak=False,
+            priority=None,
+            match_source=match_source,
+            matched_event_id=matched_event.event_id,
+            reason=f"category_not_supported:{matched_event.category}",
+            semantic_score=semantic_score,
+        )
 
     def _can_trigger(self, event_key: str, current_time: float, cooldown: float) -> bool:
         """冷却防抖机制"""
-        last_trigger = self.cooldown_tracker.get(event_key, 0.0)
-        if (current_time - last_trigger) >= cooldown:
-            self.cooldown_tracker[event_key] = current_time
-            return True
-        return False
+        with self._state_lock:
+            last_trigger = self.cooldown_tracker.get(event_key, 0.0)
+            if (current_time - last_trigger) >= cooldown:
+                self.cooldown_tracker[event_key] = current_time
+                return True
+            return False
 
     def _dispatch_alert(self, tts_content: str, priority: int):
         print(f"[{time.strftime('%H:%M:%S')}] 🔊 仲裁下发 [P{priority}] -> {tts_content}")
         self.tts_manager.speak(tts_content, priority=priority)
+
+    def reset_runtime_state(self) -> dict:
+        with self._state_lock:
+            self.cooldown_tracker.clear()
+            self.last_processed_ocr = ""
+            self.last_decision = {
+                "decision_code": "NO_SIGN",
+                "speak": False,
+                "priority": None,
+                "voice_prompt": "",
+                "match_source": None,
+                "matched_event_id": None,
+                "reason": "manual_reset",
+                "ts": time.time(),
+            }
+        self.tts_manager.clear_queue()
+        return {"ok": True, "reset_at": time.time()}
+
+    def get_runtime_state(self) -> dict:
+        with self._state_lock:
+            cooldown_size = len(self.cooldown_tracker)
+            last_processed_ocr = self.last_processed_ocr
+            last_decision = dict(self.last_decision)
+        return {
+            "cooldown_size": cooldown_size,
+            "last_processed_ocr": last_processed_ocr,
+            "last_decision": last_decision,
+            "tts_queue_size": self.tts_manager.queue_size(),
+        }
 
     def shutdown(self):
         self.tts_manager.stop()

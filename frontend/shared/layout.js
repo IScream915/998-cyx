@@ -30,9 +30,9 @@ export const NAV_ITEMS = [
   {
     key: "module-e",
     label: "模块E展示",
-    desc: "提醒模块预留页面",
+    desc: "仿真触发与仲裁结果",
     title: "模块E展示",
-    subtitle: "当前为占位页，等待接入模块E能力",
+    subtitle: "通过仿真上游输入独立触发 moduleE 提醒流程",
   },
 ];
 
