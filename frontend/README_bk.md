@@ -16,8 +16,6 @@ pip install pyzmq websockets
 python3 moduleB/run.py
 ```
 
-默认会启动：
-
 - ZeroMQ 发布：`tcp://*:5052`（topic `Frame`）
 - 控制接口：`http://127.0.0.1:5056`
 
@@ -27,15 +25,23 @@ python3 moduleB/run.py
 python3 moduleD/mock_module_d.py
 ```
 
-默认会启动：
-
 - ZeroMQ 发布：`tcp://*:5053`（topic `Frame`）
 - 控制接口：`http://127.0.0.1:5057`
 
-### 3) 启动前端静态服务（含 API 代理）
+### 3) 启动 moduleC（新版本）
 
 ```bash
-python3 frontend/server.py
+cd moduleC
+uv run python demo/modulecd_bsd_demo/service.py
+```
+
+- 输出：`tcp://*:5058`（topic `Frame`）
+- browser-only 流：`tcp://*:5059`（topic `Frame`）
+
+### 4) 启动前端统一服务（静态 + API 代理 + moduleC 实时桥接）
+
+```bash
+python3 frontend/server.py --module_c_config moduleC/demo/modulecd_bsd_demo/config.toml
 ```
 
 默认监听：
@@ -49,7 +55,7 @@ python3 frontend/server.py
 http://127.0.0.1:4173
 ```
 
-### 4) 启动桥接服务（全流程页实时）
+### 5) 启动全流程桥接（ab_frame / b_frame / d_frame / e_frame）
 
 ```bash
 python3 frontend/ws_bridge.py
@@ -59,97 +65,47 @@ python3 frontend/ws_bridge.py
 
 ---
 
-## frontend/server.py 新增 API
-
-`server.py` 现在除了静态资源，还提供以下同源 API。
+## frontend/server.py API
 
 ### 场景目录 API
 
 - `GET /api/scenes`
-  - 返回 `frontend/assets/scenes` 下一级目录与帧数
 - `GET /api/scenes/{scene}/frames`
-  - 返回该目录图片列表（仅 `.jpg/.jpeg/.png`）
-
-安全限制：
-
-- 禁止 `..`、绝对路径和越界目录
-- 仅允许白名单后缀
 
 ### moduleB/moduleD 控制代理 API
 
-- `GET /api/module-b/state` -> 代理 `GET http://127.0.0.1:5056/state`
-- `POST /api/module-b/mode` -> 代理 `/mode`
-- `POST /api/module-b/scene` -> 代理 `/scene`
-- `POST /api/module-b/player` -> 代理 `/player`
-- `GET /api/module-d/state` -> 代理 `GET http://127.0.0.1:5057/state`
-- `POST /api/module-d/mode` -> 代理 `/mode`
-- `POST /api/module-d/scene` -> 代理 `/scene`
-- `POST /api/module-d/player` -> 代理 `/player`
+- `GET /api/module-b/state`
+- `POST /api/module-b/mode`
+- `POST /api/module-b/scene`
+- `POST /api/module-b/player`
+- `GET /api/module-d/state`
+- `POST /api/module-d/mode`
+- `POST /api/module-d/scene`
+- `POST /api/module-d/player`
 
-可通过参数改代理目标：
+### moduleC 实时 API（新增）
 
-```bash
-python3 frontend/server.py \
-  --module_b_control_host 127.0.0.1 --module_b_control_port 5056 \
-  --module_d_control_host 127.0.0.1 --module_d_control_port 5057
-```
+- `GET /api/module-c/health`
+- `GET /api/module-c/ws`（WebSocket）
 
----
+可通过参数覆盖 moduleC bridge 配置：
 
-## 模块B展示页行为
-
-`模块B展示` 页面已切换为“后端驱动本地图片流”：
-
-1. 进入页面后自动调用 `POST /api/module-b/mode {"mode":"local"}`。
-2. 场景下拉框会动态读取 `frontend/assets/scenes` 子目录。
-3. 选择场景后调用 `POST /api/module-b/scene`。
-4. 点击播放/暂停/重置分别调用 `POST /api/module-b/player`。
-5. 页面通过 WebSocket `b_frame` 事件实时刷新图片与 `scene/confidence/speed`。
-6. `source_mode=local` 时，若 `moduleB.heatmap_base64` 存在，会在右侧“热力图预留窗口”实时展示 Grad-CAM 叠加热图。
+- `--module_c_config`
+- `--module_c_input_endpoint`
+- `--module_c_output_endpoint`
+- `--module_c_browser_endpoint`
+- `--module_c_topic`
+- `--module_c_merge_timeout_ms`
+- `--module_c_push_fps`
 
 ---
 
-## 模块D展示页行为
+## 页面行为
 
-`模块D展示` 页面已切换为“后端驱动本地图片流”：
-
-1. 进入页面后自动调用 `POST /api/module-d/mode {"mode":"local"}`。
-2. 场景下拉框会动态读取 `frontend/assets/scenes` 子目录。
-3. 选择场景后调用 `POST /api/module-d/scene`。
-4. 点击播放/暂停/重置分别调用 `POST /api/module-d/player`。
-5. 页面通过 WebSocket `d_frame` 事件实时刷新图片与 `num_traffic_signs/num_pedestrians/num_vehicles`。
-6. `source_mode=local` 时，若 `moduleD.yolo_overlay_base64` 存在，会在右侧“YOLO识别框预留窗口”实时展示识别框叠加图。
-7. 若某帧识别框生成失败，该帧会降级为仅更新统计字段，页面回退占位态但播放不中断。
-
----
-
-## 全流程页行为
-
-`全流程展示` 页面 mount 时会调用：
-
-```json
-{"mode": "zmq"}
-```
-
-即自动把 moduleB 切回 A-ZMQ 输入模式。
-即自动把 moduleD 切回 A-ZMQ 输入模式。
-
----
-
-## ws_bridge.py 事件
-
-保留：
-
-- `ab_frame`
-- `d_frame`
-  - local 模式可带：`moduleD.scene_folder/image_relpath/frame_index/frame_total/yolo_overlay_base64`
-- `e_frame`
-- `status`
-
-新增：
-
-- `b_frame`（每条 moduleB 消息都推送，不依赖 A/B 配对）
-  - 可选字段：`moduleB.heatmap_base64`（local 模式热力图）
+- `模块B展示`：本地图片流 + `b_frame` 实时渲染（含热力图）。
+- `模块C展示`：加载 `pages/module-c_new`，通过 `/api/module-c/ws` 实时绘制左右双窗 tracker 叠加。
+- `模块D展示`：本地图片流 + `d_frame` 实时渲染。
+- `全流程展示`：继续走 A+B+D+E 链路，不受 moduleC 新接入影响。
 
 ---
 
@@ -157,13 +113,15 @@ python3 frontend/server.py \
 
 ```text
 frontend/
-  server.py                  # 静态服务 + 场景API + moduleB/moduleD 控制代理
+  server.py                  # 统一服务入口（静态 + API + moduleC bridge）
+  live_server.py             # 兼容入口，复用 server.py
   ws_bridge.py               # A+B+D+E ZMQ -> WebSocket
   pages/
-    fullflow/page.js         # 全流程页（进入时回切moduleB/moduleD到zmq）
-    module-b/page.js         # 模块B页（本地模式 + 实时b_frame）
-    module-c/page.js         # 模块C占位页（不接入实时控制/消费）
-    module-d/page.js         # 模块D页（本地模式 + 实时d_frame）
+    fullflow/page.js
+    module-b/page.js
+    module-c_new/page.js     # 模块C新实时页（当前接入）
+    module-c_bk/page.js      # 模块C旧占位备份
+    module-d/page.js
   assets/
-    scenes/                  # 本地图片流场景目录
+    scenes/
 ```

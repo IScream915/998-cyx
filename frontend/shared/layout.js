@@ -16,9 +16,9 @@ export const NAV_ITEMS = [
   {
     key: "module-c",
     label: "模块C展示",
-    desc: "决策模块预留页面",
+    desc: "实时追踪叠加页",
     title: "模块C展示",
-    subtitle: "当前为占位页，等待接入模块C能力",
+    subtitle: "左右双窗实时叠加展示盲区追踪与告警",
   },
   {
     key: "module-d",

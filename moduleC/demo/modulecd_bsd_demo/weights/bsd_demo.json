@@ -1,0 +1,43 @@
+{
+  "backend": "custom",
+  "device": "cuda:0",
+  "epochs": 4,
+  "best_val_loss": 1.3867490947246552,
+  "learn_task_uncertainty": false,
+  "box_format": "ltrb_dfl",
+  "reg_max": 16,
+  "dense_positive_radius": 1,
+  "task_aligned_assignment": true,
+  "task_aligned_topk": 5,
+  "task_aligned_center_sigma": 0.35,
+  "checkpoint_selection": "val_loss",
+  "selection_metric": "f1",
+  "selection_episode_dirs": [],
+  "selection_max_frames": 200,
+  "selection_custom_conf_thresh": 0.85,
+  "best_selection_score": null,
+  "final_det_weight": 1.0,
+  "final_seg_weight": 1.0,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 1.3429888491808626,
+      "val_loss": 1.3974508364995322
+    },
+    {
+      "epoch": 2,
+      "train_loss": 1.3387716014355544,
+      "val_loss": 1.3933711032072702
+    },
+    {
+      "epoch": 3,
+      "train_loss": 1.3342714190977738,
+      "val_loss": 1.3899303952852884
+    },
+    {
+      "epoch": 4,
+      "train_loss": 1.330030098990286,
+      "val_loss": 1.3867490947246552
+    }
+  ]
+}

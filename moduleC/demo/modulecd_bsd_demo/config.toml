@@ -1,0 +1,243 @@
+[carla]
+fixed_delta_seconds = 0.05
+
+[demo.zmq]
+input_addr = "tcp://192.168.31.157:5050"
+input_bind = "tcp://*:5051"
+input_topic = "Frame"
+output_bind = "tcp://*:5058"
+output_endpoint = "tcp://localhost:5058"
+output_topic = "Frame"
+recv_timeout_ms = 1000
+
+[demo.frontend]
+bind = "tcp://*:5059"
+endpoint = "tcp://localhost:5059"
+topic = "Frame"
+
+[demo.sensors]
+left_camera_sensor_id = "left_camera"
+right_camera_sensor_id = "right_camera"
+top_camera_sensor_id = "top_camera"
+left_zone_mask_sensor_id = "adjacent_lane_mask_left"
+right_zone_mask_sensor_id = "adjacent_lane_mask_right"
+imu_sensor_id = "imu"
+vehicle_state_id = "ego"
+
+[demo.defaults]
+speed_kmh = 30.0
+left_signal = false
+right_signal = false
+imu_gz = 0.0
+imu_ax = 0.0
+
+[demo.assets]
+left_image = "demo/modulecd_bsd_demo/assets/left_demo.jpg"
+right_image = "demo/modulecd_bsd_demo/assets/right_demo.jpg"
+top_image = "demo/modulecd_bsd_demo/assets/top_demo.jpg"
+
+[logging]
+level = "INFO"
+detection_summary = true
+tracking_summary = true
+tracking_lifecycle = true
+pipeline_summary = true
+
+[sensors.cam_bsd_left]
+loc = [1.05, -1.02, 1.22]
+rot = [-3.5, -148.0, 0.0]
+fov = 72
+width = 960
+height = 540
+
+[sensors.cam_bsd_right]
+loc = [1.05, 1.02, 1.22]
+rot = [-3.5, 148.0, 0.0]
+fov = 72
+width = 960
+height = 540
+
+[detection]
+model_path = "demo/modulecd_bsd_demo/weights/bsd_demo.pt"
+pretrained_path = "demo/modulecd_bsd_demo/weights/bsd_demo.pt"
+conf_thresh = 0.10
+iou_thresh = 0.45
+device = "auto"
+custom_side_prior_enabled = true
+custom_side_prior_mode = "soft"
+custom_side_prior_strength = 0.25
+custom_conf_thresh = 0.85
+custom_quality_ranking_enabled = true
+custom_quality_ranking_strength = 1.00
+custom_quality_ranking_floor = 0.65
+custom_temporal_prior_enabled = true
+custom_temporal_prior_min_conf = 0.55
+custom_temporal_prior_thresh_relax = 0.30
+custom_temporal_prior_score_boost = 0.20
+custom_temporal_prior_iou_weight = 0.65
+custom_temporal_prior_center_weight = 0.35
+custom_temporal_prior_center_gate_ratio = 0.18
+custom_temporal_prior_min_track_age = 2
+custom_temporal_prior_max_missing = 1
+custom_temporal_prior_min_track_confidence = 0.35
+custom_temporal_prior_max_tracks = 4
+custom_zone_rescue_enabled = true
+custom_zone_rescue_min_conf = 0.80
+custom_zone_rescue_thresh_relax = 0.15
+custom_zone_rescue_score_boost = 0.10
+custom_max_detections_per_frame = 2
+target_classes = [0]
+
+[tracking]
+track_thresh = 0.10
+track_buffer = 30
+match_thresh = 0.8
+match_score_thresh = 0.70
+frame_rate = 20
+track_low_thresh = 0.05
+new_track_thresh = 0.20
+low_match_thresh = 0.65
+enable_imu_compensated_byte = true
+enable_zone_aware_byte = true
+enable_risk_aware_byte = true
+assoc_iou_weight = 0.55
+assoc_center_weight = 0.20
+assoc_conf_weight = 0.10
+assoc_zone_weight = 0.15
+assoc_risk_weight = 0.10
+center_distance_gate_ratio = 0.20
+zone_overlap_thresh = 0.05
+zone_memory_frames = 10
+zone_track_buffer_bonus = 16
+risk_score_thresh = 0.60
+risk_memory_frames = 10
+risk_track_buffer_bonus = 12
+risk_center_gate_bonus = 0.35
+risk_center_weight_boost = 0.12
+risk_zone_weight_boost = 0.18
+risk_conf_suppression = 0.30
+risk_missing_boost = 0.15
+risk_match_relax_max = 0.18
+risk_match_score_floor = 0.35
+risk_match_min_conf = 0.15
+
+[zones.speed_scale]
+breakpoints = [0, 30, 60, 80, 120]
+scales = [0.70, 1.00, 1.25, 1.50, 1.80]
+
+[zones.signal_expansion]
+value = 0.25
+
+[zones.imu_expansion]
+gz_thresh = 0.05
+gz_max = 0.5
+max_value = 0.40
+
+[zones.segmentation]
+enabled = true
+threshold = 0.50
+min_area_ratio = 0.01
+max_area_ratio = 0.60
+min_bottom_y_ratio = 0.85
+side_split_x = 0.50
+open_kernel = 5
+close_kernel = 9
+edge_quantile = 0.08
+top_quantile = 0.10
+band_height_ratio = 0.12
+
+[zones.external_mask]
+polygon_points = 128
+simplify_epsilon_ratio = 0.003
+min_length_ratio = 0.30
+length_gain = 1.0
+max_length_ratio = 0.16
+
+[zones.stability]
+enabled = true
+segmentation_alpha = 0.78
+template_alpha = 0.04
+hold_frames = 1
+
+[zones.imu_segmentation_bias]
+enabled = true
+top_y_strength = 0.22
+outer_edge_strength = 0.28
+max_top_y_ratio = 0.06
+max_outer_edge_ratio = 0.08
+
+[zones.left]
+center_x = 0.24
+top_y_base = 0.52
+bot_half_w_base = 0.22
+top_half_w_base = 0.09
+
+[zones.right]
+center_x = 0.76
+top_y_base = 0.52
+bot_half_w_base = 0.22
+top_half_w_base = 0.09
+
+[prediction]
+history_len = 10
+horizons_s = [1.0, 2.0]
+min_history = 3
+full_conf_frames = 8
+
+[prediction.markov]
+transition = [
+  [0.80, 0.10, 0.10],
+  [0.10, 0.80, 0.10],
+  [0.10, 0.10, 0.80],
+]
+initial_weights = [0.6, 0.2, 0.2]
+
+[prediction.cv]
+process_noise_pos = 10.0
+process_noise_vel = 5.0
+meas_noise = 4.0
+
+[prediction.ca]
+process_noise_pos = 10.0
+process_noise_vel = 5.0
+process_noise_acc = 2.0
+meas_noise = 4.0
+
+[prediction.ctrv]
+process_noise_vel = 1.0
+process_noise_yaw = 0.1
+process_noise_omega = 0.01
+meas_noise = 4.0
+
+[alerting]
+warning_risk_thresh = 0.6
+danger_hysteresis = 3
+min_pred_confidence = 0.3
+min_object_confidence = 0.5
+min_alert_bbox_area_px2 = 500
+min_alert_bbox_width_px = 18
+min_alert_bbox_height_px = 18
+warning_hysteresis = 2
+warning_min_track_age = 2
+danger_min_track_age = 2
+warning_repeat_interval_frames = 6
+danger_repeat_interval_frames = 4
+stationary_single_alert_enabled = true
+stationary_speed_threshold_kmh = 1.0
+warning_display_hold_frames = 12
+danger_display_hold_frames = 16
+display_repeat_extend_frames = 6
+display_max_hold_frames = 40
+
+[training]
+class_names = ["car"]
+box_format = "ltrb_dfl"
+reg_max = 16
+imgsz = 640
+
+[demo.mainline]
+camera_profile = "mirror_view_v1"
+weight_name = "stage_c_laneprojected_continue"
+weight_source = "weights/stage_c_laneprojected_continue.pt"
+dataset = "bsd_remote_multimap_mirror_collect_v1_caronly"
+notes = "Mirror-view mainline with lane-projected masks and Stage C continuation fine-tuning."

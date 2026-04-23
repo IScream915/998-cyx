@@ -1,0 +1,30 @@
+[project]
+name = "modulecd-bsd-demo-app"
+version = "0.1.0"
+description = "Standalone CARLA-free BSD ZMQ demo with moduleCD-compatible I/O"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "opencv-python>=4.9.0",
+    "pyzmq>=27.0.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "lap>=0.5.12",
+    "filterpy>=1.4.5",
+    "tomli>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "training", "demo"]
