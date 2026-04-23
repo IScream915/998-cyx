@@ -182,16 +182,6 @@ export function mount(container, { components }) {
       ],
       createPlaceholderPayload("moduleA", "本阶段仅将A图像用于驾驶场景主画面"),
     );
-
-    renderModuleCardBody(
-      cardE,
-      components,
-      [
-        { label: "状态", value: "占位" },
-        { label: "说明", value: "未接入实时流" },
-      ],
-      createPlaceholderPayload("moduleE", "后续迭代再接入实时推送"),
-    );
   }
 
   function renderModuleB(moduleBPayload, fallbackFrameId) {
@@ -236,6 +226,42 @@ export function mount(container, { components }) {
     );
   }
 
+  function renderModuleE(moduleEPayload, fallbackFrameId) {
+    const frameId = moduleEPayload?.frame_id ?? fallbackFrameId;
+    const status = typeof moduleEPayload?.status === "string" ? moduleEPayload.status : "unknown";
+    const scene = typeof moduleEPayload?.scene === "string" ? moduleEPayload.scene : "-";
+    const speed = toNumber(moduleEPayload?.speed);
+    const detectedSigns = Array.isArray(moduleEPayload?.detected_signs)
+      ? moduleEPayload.detected_signs.length
+      : null;
+    const errorType = typeof moduleEPayload?.error_type === "string" ? moduleEPayload.error_type : "";
+
+    let statusTone = "";
+    if (status === "processed") {
+      statusTone = "success";
+    } else if (status === "process_error") {
+      statusTone = "danger";
+    } else {
+      statusTone = "warn";
+    }
+
+    const metricRows = [
+      { label: "frame_id", value: String(frameId ?? "-") },
+      { label: "status", value: status, tone: statusTone },
+      { label: "scene", value: scene },
+      { label: "speed", value: speed === null ? "-" : `${Math.round(speed)} km/h` },
+      {
+        label: "detected_signs",
+        value: detectedSigns === null ? "-" : String(detectedSigns),
+      },
+    ];
+    if (errorType) {
+      metricRows.push({ label: "error_type", value: errorType, tone: "danger" });
+    }
+
+    renderModuleCardBody(cardE, components, metricRows, moduleEPayload);
+  }
+
   function renderFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
@@ -273,6 +299,19 @@ export function mount(container, { components }) {
       payload?.moduleC && typeof payload.moduleC === "object" ? payload.moduleC : {};
     renderModuleC(moduleCPayload, Math.trunc(frameId));
     pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
+  }
+
+  function renderEFrame(payload) {
+    const frameId = toNumber(payload?.frame_id);
+    if (frameId === null) {
+      pushLog("收到e_frame但frame_id非法，已忽略");
+      return;
+    }
+
+    const moduleEPayload =
+      payload?.moduleE && typeof payload.moduleE === "object" ? payload.moduleE : {};
+    renderModuleE(moduleEPayload, Math.trunc(frameId));
+    pushLog(`接收模块E输出 frame_id=${Math.trunc(frameId)}，已更新moduleE面板`);
   }
 
   function scheduleReconnect() {
@@ -337,6 +376,10 @@ export function mount(container, { components }) {
         renderCFrame(payload);
         return;
       }
+      if (evt === "e_frame") {
+        renderEFrame(payload);
+        return;
+      }
       if (evt === "status") {
         const status = payload?.status ?? "status";
         const message = payload?.message ?? "状态更新";
@@ -364,6 +407,7 @@ export function mount(container, { components }) {
   renderStaticCards();
   renderModuleB({}, null);
   renderModuleC({}, null);
+  renderModuleE({}, null);
   connectWebSocket();
 
   return () => {

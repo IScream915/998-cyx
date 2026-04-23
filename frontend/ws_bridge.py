@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A+B+C ZMQ -> WebSocket bridge for frontend/fullflow page."""
+"""A+B+C+E ZMQ -> WebSocket bridge for frontend/fullflow page."""
 
 from __future__ import annotations
 
@@ -35,13 +35,15 @@ class MatchedFrame:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="A+B+C 到 WebSocket 的实时桥接服务")
+    parser = argparse.ArgumentParser(description="A+B+C+E 到 WebSocket 的实时桥接服务")
     parser.add_argument("--a-endpoint", default="tcp://192.168.31.157:5050", help="模块A订阅地址")
     parser.add_argument("--a-topic", default="Frame", help="模块A订阅topic")
     parser.add_argument("--b-endpoint", default="tcp://localhost:5052", help="模块B订阅地址")
     parser.add_argument("--b-topic", default="Frame", help="模块B订阅topic")
     parser.add_argument("--c-endpoint", default="tcp://localhost:5053", help="模块C订阅地址")
     parser.add_argument("--c-topic", default="Frame", help="模块C订阅topic")
+    parser.add_argument("--e-endpoint", default="tcp://localhost:5054", help="模块E订阅地址")
+    parser.add_argument("--e-topic", default="Frame", help="模块E订阅topic")
     parser.add_argument("--ws-host", default="0.0.0.0", help="WebSocket监听地址")
     parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket监听端口")
     parser.add_argument("--match-timeout-ms", type=int, default=1500, help="A/B配对超时毫秒")
@@ -61,6 +63,7 @@ class ABWsBridge:
             "invalid_a": 0,
             "invalid_b": 0,
             "invalid_c": 0,
+            "invalid_e": 0,
         }
 
     @staticmethod
@@ -206,6 +209,17 @@ class ABWsBridge:
             }
         )
 
+    async def _on_e_message(self, payload: dict[str, Any]) -> None:
+        frame_id = self._parse_frame_id(payload.get("frame_id"))
+        await self._broadcast(
+            {
+                "event": "e_frame",
+                "frame_id": frame_id,
+                "moduleE": payload,
+                "ts": time.time(),
+            }
+        )
+
     def _evict_timeout(self, now: float) -> None:
         timeout_sec = self.args.match_timeout_ms / 1000.0
         expired = [
@@ -222,27 +236,33 @@ class ABWsBridge:
         socket_a = context.socket(zmq.SUB)
         socket_b = context.socket(zmq.SUB)
         socket_c = context.socket(zmq.SUB)
+        socket_e = context.socket(zmq.SUB)
         try:
             socket_a.setsockopt_string(zmq.SUBSCRIBE, self.args.a_topic)
             socket_b.setsockopt_string(zmq.SUBSCRIBE, self.args.b_topic)
             socket_c.setsockopt_string(zmq.SUBSCRIBE, self.args.c_topic)
+            socket_e.setsockopt_string(zmq.SUBSCRIBE, self.args.e_topic)
             socket_a.connect(self.args.a_endpoint)
             socket_b.connect(self.args.b_endpoint)
             socket_c.connect(self.args.c_endpoint)
+            socket_e.connect(self.args.e_endpoint)
 
             poller = zmq.asyncio.Poller()
             poller.register(socket_a, zmq.POLLIN)
             poller.register(socket_b, zmq.POLLIN)
             poller.register(socket_c, zmq.POLLIN)
+            poller.register(socket_e, zmq.POLLIN)
 
             logging.info(
-                "ZMQ订阅已启动: A=%s[%s], B=%s[%s], C=%s[%s]",
+                "ZMQ订阅已启动: A=%s[%s], B=%s[%s], C=%s[%s], E=%s[%s]",
                 self.args.a_endpoint,
                 self.args.a_topic,
                 self.args.b_endpoint,
                 self.args.b_topic,
                 self.args.c_endpoint,
                 self.args.c_topic,
+                self.args.e_endpoint,
+                self.args.e_topic,
             )
 
             while not self.stop_event.is_set():
@@ -276,12 +296,22 @@ class ABWsBridge:
                         self.stats["invalid_c"] += 1
                         logging.warning("C消息解析失败，已丢弃: %s", exc)
 
+                if socket_e in events:
+                    frames = await socket_e.recv_multipart()
+                    try:
+                        _topic, payload = self._parse_json_message(frames, self.args.e_topic)
+                        await self._on_e_message(payload)
+                    except Exception as exc:
+                        self.stats["invalid_e"] += 1
+                        logging.warning("E消息解析失败，已丢弃: %s", exc)
+
                 self._evict_timeout(now)
 
         finally:
             socket_a.close(linger=0)
             socket_b.close(linger=0)
             socket_c.close(linger=0)
+            socket_e.close(linger=0)
             context.term()
 
     async def ws_handler(self, websocket: Any, _path: str | None = None) -> None:

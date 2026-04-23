@@ -142,6 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
     parser.add_argument("--match_timeout_ms", type=int, default=1500, help="同一 frame_id 配对超时(ms)")
+    parser.add_argument("--publish_bind", default="tcp://*:5054", help="处理结果发布地址")
+    parser.add_argument("--publish_topic", default="Frame", help="处理结果发布 topic")
 
     module_dir = Path(__file__).resolve().parent
     parser.add_argument(
@@ -184,6 +186,8 @@ def main() -> None:
         poller.register(socket, zmq.POLLIN)
         sockets.append(socket)
         socket_to_endpoint[socket] = endpoint
+    publisher = ctx.socket(zmq.PUB)
+    publisher.bind(args.publish_bind)
 
     running = True
 
@@ -195,6 +199,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop_handler)
 
     print(f"[moduleE] SUB 已连接: {', '.join(endpoints)}, topic={args.topic}")
+    print(f"[moduleE] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
     print("[moduleE] B+CD 按 frame_id 对齐后将调用 TrafficReminder 引擎处理")
     print("[moduleE] 按 Ctrl+C 停止")
 
@@ -267,7 +272,11 @@ def main() -> None:
                             "error": str(exc),
                         }
 
-                    print(json.dumps(result, ensure_ascii=False))
+                    result_text = json.dumps(result, ensure_ascii=False)
+                    publisher.send_multipart(
+                        [args.publish_topic.encode("utf-8"), result_text.encode("utf-8")]
+                    )
+                    print(result_text)
                     del pending[frame_id]
 
             # 超时未配齐的 frame_id 直接丢弃，保证低延迟
@@ -292,6 +301,7 @@ def main() -> None:
         for socket in sockets:
             poller.unregister(socket)
             socket.close(linger=0)
+        publisher.close(linger=0)
         ctx.term()
         engine.shutdown()
         print("[moduleE] 已停止")
