@@ -16,7 +16,7 @@ export function mount(container, { components }) {
         <header class="card-head">
           <div>
             <h3 class="card-title">模块B独立展示</h3>
-            <p class="card-subtitle">左侧原始场景序列，右侧热力图预留窗口</p>
+            <p class="card-subtitle">左侧原始场景序列，右侧为热力图窗口</p>
           </div>
           <span id="module-b-play-state" class="badge">未播放</span>
         </header>

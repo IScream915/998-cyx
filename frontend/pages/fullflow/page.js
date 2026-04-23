@@ -89,7 +89,6 @@ export function mount(container, { components }) {
           <div class="card-body">
             <div class="stage-frame">
               <img id="stage-image" src="${EMPTY_PIXEL}" alt="等待实时帧" loading="lazy" />
-              <div id="stage-empty" class="stage-empty">等待 A+B 配对帧...</div>
               <div class="stage-overlay">
                 <span id="stage-time-badge" class="badge mono">--:--:--</span>
                 <span id="stage-scene-badge" class="badge">实时流</span>
@@ -153,7 +152,6 @@ export function mount(container, { components }) {
   const wsStatusBadge = container.querySelector("#ws-status-badge");
   const wsEndpoint = container.querySelector("#ws-endpoint");
   const stageImage = container.querySelector("#stage-image");
-  const stageEmpty = container.querySelector("#stage-empty");
   const frameBadge = container.querySelector("#frame-badge");
   const stageTimeBadge = container.querySelector("#stage-time-badge");
   const stageSceneBadge = container.querySelector("#stage-scene-badge");
@@ -272,7 +270,6 @@ export function mount(container, { components }) {
     if (typeof payload?.image_src === "string" && payload.image_src.startsWith("data:image/jpeg;base64,")) {
       stageImage.src = payload.image_src;
       stageImage.alt = `驾驶场景帧 ${frameId}`;
-      stageEmpty.hidden = true;
     } else {
       pushLog(`frame_id=${frameId} 的image_src非法，已忽略`);
       return;

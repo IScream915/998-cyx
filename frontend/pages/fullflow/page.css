@@ -48,17 +48,6 @@
   gap: 8px;
 }
 
-.stage-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  color: var(--text-muted);
-  background: linear-gradient(180deg, rgba(7, 9, 12, 0.68), rgba(7, 9, 12, 0.38));
-  backdrop-filter: blur(1px);
-}
-
 .module-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
