@@ -18,8 +18,8 @@ const PAGE_REGISTRY = {
     stylePath: "./pages/module-b/page.css",
   },
   "module-c": {
-    loader: () => import("./pages/module-c_new/page.js"),
-    stylePath: "./pages/module-c_new/page.css",
+    loader: () => import("./pages/module-c/page.js"),
+    stylePath: "./pages/module-c/page.css",
   },
   "module-d": {
     loader: () => import("./pages/module-d/page.js"),

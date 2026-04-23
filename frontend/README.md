@@ -103,7 +103,7 @@ python3 frontend/ws_bridge.py
 ## 页面行为
 
 - `模块B展示`：本地图片流 + `b_frame` 实时渲染（含热力图）。
-- `模块C展示`：加载 `pages/module-c_new`，通过 `/api/module-c/ws` 实时绘制左右双窗 tracker 叠加。
+- `模块C展示`：加载 `pages/module-c`，通过 `/api/module-c/ws` 实时绘制左右双窗 tracker 叠加。
 - `模块D展示`：本地图片流 + `d_frame` 实时渲染。
 - `全流程展示`：继续走 A+B+D+E 链路，不受 moduleC 新接入影响。
 
@@ -114,13 +114,11 @@ python3 frontend/ws_bridge.py
 ```text
 frontend/
   server.py                  # 统一服务入口（静态 + API + moduleC bridge）
-  live_server.py             # 兼容入口，复用 server.py
   ws_bridge.py               # A+B+D+E ZMQ -> WebSocket
   pages/
     fullflow/page.js
     module-b/page.js
-    module-c_new/page.js     # 模块C新实时页（当前接入）
-    module-c_bk/page.js      # 模块C旧占位备份
+    module-c/page.js     # 模块C新实时页（当前接入）
     module-d/page.js
   assets/
     scenes/
