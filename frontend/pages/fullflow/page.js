@@ -122,9 +122,9 @@ export function mount(container, { components }) {
             <section class="module-card">
               <div class="module-card-head">
                 <h4>moduleC 检测结果</h4>
-                <span class="badge mono">CD</span>
+                <span class="badge mono">C</span>
               </div>
-              <div id="card-module-cd" class="module-card-body"></div>
+              <div id="card-module-c" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
@@ -159,7 +159,7 @@ export function mount(container, { components }) {
   const stageSceneBadge = container.querySelector("#stage-scene-badge");
   const cardA = container.querySelector("#card-module-a");
   const cardB = container.querySelector("#card-module-b");
-  const cardCD = container.querySelector("#card-module-cd");
+  const cardC = container.querySelector("#card-module-c");
   const cardE = container.querySelector("#card-module-e");
   const logList = container.querySelector("#fullflow-log-list");
 
@@ -181,16 +181,6 @@ export function mount(container, { components }) {
         { label: "说明", value: "主画面已实时展示A图像" },
       ],
       createPlaceholderPayload("moduleA", "本阶段仅将A图像用于驾驶场景主画面"),
-    );
-
-    renderModuleCardBody(
-      cardCD,
-      components,
-      [
-        { label: "状态", value: "占位" },
-        { label: "说明", value: "未接入实时流" },
-      ],
-      createPlaceholderPayload("moduleC", "后续迭代再接入实时推送"),
     );
 
     renderModuleCardBody(
@@ -223,6 +213,29 @@ export function mount(container, { components }) {
     );
   }
 
+  function renderModuleC(moduleCPayload, fallbackFrameId) {
+    const frameId = moduleCPayload?.frame_id ?? fallbackFrameId;
+    const numTrafficSigns = toNumber(moduleCPayload?.num_traffic_signs);
+    const numPedestrians = toNumber(moduleCPayload?.num_pedestrians);
+    const numVehicles = toNumber(moduleCPayload?.num_vehicles);
+    const firstSign = Array.isArray(moduleCPayload?.traffic_signs)
+      ? moduleCPayload.traffic_signs[0]?.class_name ?? "无"
+      : "无";
+
+    renderModuleCardBody(
+      cardC,
+      components,
+      [
+        { label: "frame_id", value: String(frameId ?? "-") },
+        { label: "traffic_signs", value: numTrafficSigns === null ? "-" : String(Math.trunc(numTrafficSigns)) },
+        { label: "pedestrians", value: numPedestrians === null ? "-" : String(Math.trunc(numPedestrians)) },
+        { label: "vehicles", value: numVehicles === null ? "-" : String(Math.trunc(numVehicles)) },
+        { label: "主要标志", value: firstSign },
+      ],
+      moduleCPayload,
+    );
+  }
+
   function renderFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
@@ -247,6 +260,19 @@ export function mount(container, { components }) {
       payload?.moduleB && typeof payload.moduleB === "object" ? payload.moduleB : {};
     renderModuleB(moduleBPayload, Math.trunc(frameId));
     pushLog(`接收配对帧 frame_id=${Math.trunc(frameId)}，已更新场景图与moduleB面板`);
+  }
+
+  function renderCFrame(payload) {
+    const frameId = toNumber(payload?.frame_id);
+    if (frameId === null) {
+      pushLog("收到c_frame但frame_id非法，已忽略");
+      return;
+    }
+
+    const moduleCPayload =
+      payload?.moduleC && typeof payload.moduleC === "object" ? payload.moduleC : {};
+    renderModuleC(moduleCPayload, Math.trunc(frameId));
+    pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
   }
 
   function scheduleReconnect() {
@@ -307,6 +333,10 @@ export function mount(container, { components }) {
         renderFrame(payload);
         return;
       }
+      if (evt === "c_frame") {
+        renderCFrame(payload);
+        return;
+      }
       if (evt === "status") {
         const status = payload?.status ?? "status";
         const message = payload?.message ?? "状态更新";
@@ -333,6 +363,7 @@ export function mount(container, { components }) {
 
   renderStaticCards();
   renderModuleB({}, null);
+  renderModuleC({}, null);
   connectWebSocket();
 
   return () => {

@@ -38,7 +38,7 @@ python3 frontend/server.py --host 0.0.0.0 --port 8080
 
 说明：`server.py` 会自动定位自身所在目录并作为静态资源根目录，所以无论在本地还是部署到服务器，只要目录结构保持 `frontend/` 不变，都不需要手动写绝对路径。
 
-### 3) 全流程页实时联动（A+B）
+### 3) 全流程页实时联动（A+B+C）
 
 `全流程展示` 页面已改为实时模式，需要同时启动静态服务与桥接服务：
 
@@ -48,7 +48,7 @@ python3 frontend/server.py --host 0.0.0.0 --port 8080
 python3 frontend/server.py --host 0.0.0.0 --port 4173
 ```
 
-终端2（A+B -> WebSocket 桥接）：
+终端2（A+B+C -> WebSocket 桥接）：
 
 ```bash
 python3 frontend/ws_bridge.py
@@ -60,6 +60,8 @@ python3 frontend/ws_bridge.py
 - A topic: `Frame`
 - B endpoint: `tcp://localhost:5052`
 - B topic: `Frame`
+- C endpoint: `tcp://localhost:5053`
+- C topic: `Frame`
 - WS: `ws://0.0.0.0:8765`
 
 前端会自动连接 `ws://<页面host>:8765`。
@@ -72,6 +74,8 @@ python3 frontend/ws_bridge.py \
   --a-topic Frame \
   --b-endpoint tcp://localhost:5052 \
   --b-topic Frame \
+  --c-endpoint tcp://localhost:5053 \
+  --c-topic Frame \
   --ws-host 0.0.0.0 \
   --ws-port 8765 \
   --match-timeout-ms 1500
@@ -85,7 +89,7 @@ frontend/
   app.css                    # 全局布局与通用样式
   app.js                     # 路由与页面挂载调度
   server.py                  # 静态服务启动脚本（免手动目录）
-  ws_bridge.py               # A+B ZMQ 到 WebSocket 的实时桥接
+  ws_bridge.py               # A+B+C ZMQ 到 WebSocket 的实时桥接
   README.md                  # 本说明文档
   shared/
     theme.css                # 主题变量（黑白灰科技风）
@@ -118,7 +122,7 @@ frontend/
 
 ## 当前页面说明
 
-- `全流程展示`：实时接收 A+B 配对帧，更新场景图、`frame_id` 与 `moduleB` 输出，包含实时日志流。
+- `全流程展示`：实时接收 A+B 配对帧更新主画面与 `moduleB`，并实时接收 `moduleC` 输出更新 C 面板。
 - `模块B展示`：左右双窗（左侧原始场景，右侧热力图占位），并展示 B 模块输出。
 - `模块C/D/E展示`：当前为占位页，预留后续独立展示能力。
 
