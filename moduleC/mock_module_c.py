@@ -8,13 +8,13 @@ from typing import Any
 
 import zmq
 
-# 兼容以脚本方式运行: python3 moduleCD/mock_module_cd.py
+# 兼容以脚本方式运行: python3 moduleC/mock_module_c.py
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from moduleCD.coreDetector import CoreDetector
-from moduleCD.coreDetector.traffic_sign_map import TRAFFIC_SIGN
+from moduleC.coreDetector import CoreDetector
+from moduleC.coreDetector.traffic_sign_map import TRAFFIC_SIGN
 
 
 def _decode_frame(frame: bytes) -> str:
@@ -166,17 +166,17 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
 
-    print(f"[moduleCD] SUB 已连接: {args.endpoint}, topic={args.topic}")
-    print(f"[moduleCD] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
-    print("[moduleCD] CoreDetector 已加载")
+    print(f"[moduleC] SUB 已连接: {args.endpoint}, topic={args.topic}")
+    print(f"[moduleC] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
+    print("[moduleC] CoreDetector 已加载")
     print(
-        f"[moduleCD] 推理配置: num_threads={args.num_threads}, "
+        f"[moduleC] 推理配置: num_threads={args.num_threads}, "
         f"num_interop_threads={args.num_interop_threads}, "
         f"parallel_infer={not args.disable_parallel_infer}, "
         f"ocr_enabled={not args.disable_ocr}, "
         f"ocr_min_conf={args.ocr_min_conf:.2f}"
     )
-    print("[moduleCD] 按 Ctrl+C 停止")
+    print("[moduleC] 按 Ctrl+C 停止")
 
     try:
         while running:
@@ -207,7 +207,7 @@ def main() -> None:
                 pedestrians = _slim_detections(detect_result.get("pedestrians", []))
                 vehicles = _slim_detections(detect_result.get("vehicles", []))
 
-                # 下发格式对齐 moduleCD/pub_example.json
+                # 下发格式对齐 moduleC/pub_example.json
                 output_payload = {
                     "frame_id": frame_id,
                     "image_size": detect_result.get("image_size", {}),
@@ -240,13 +240,13 @@ def main() -> None:
                     pass
 
                 err_text = json.dumps(err_payload, ensure_ascii=False)
-                print(f"[moduleCD][From A topic={topic}] {err_text}")
+                print(f"[moduleC][From A topic={topic}] {err_text}")
     finally:
         detector.close()
         socket.close(linger=0)
         publisher.close(linger=0)
         ctx.term()
-        print("[moduleCD] 已停止")
+        print("[moduleC] 已停止")
 
 
 if __name__ == "__main__":

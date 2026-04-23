@@ -5,7 +5,7 @@
 
 默认同时订阅：
 - `tcp://localhost:5052`（moduleB）
-- `tcp://localhost:5053`（moduleCD）
+- `tcp://localhost:5053`（moduleC）
 
 ## 启动
 

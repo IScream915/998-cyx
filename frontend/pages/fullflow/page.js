@@ -121,7 +121,7 @@ export function mount(container, { components }) {
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleCD 检测结果</h4>
+                <h4>moduleC 检测结果</h4>
                 <span class="badge mono">CD</span>
               </div>
               <div id="card-module-cd" class="module-card-body"></div>
@@ -190,7 +190,7 @@ export function mount(container, { components }) {
         { label: "状态", value: "占位" },
         { label: "说明", value: "未接入实时流" },
       ],
-      createPlaceholderPayload("moduleCD", "后续迭代再接入实时推送"),
+      createPlaceholderPayload("moduleC", "后续迭代再接入实时推送"),
     );
 
     renderModuleCardBody(

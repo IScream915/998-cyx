@@ -1,4 +1,4 @@
-# moduleCD 订阅+检测+发布端
+# moduleC 订阅+检测+发布端
 
 订阅 `moduleA` 在 `tcp://localhost:5051` 发布的 `Frame` 消息，
 使用消息顶层 `frame_id` 作为当前帧号，并从 `frames.top_camera.payload.Image.data` 读取图像（base64 编码 jpg）直接调用 `coreDetector` 进行检测（不落盘二次保存），
@@ -11,7 +11,7 @@
 ## 启动
 
 ```bash
-python3 moduleCD/mock_module_cd.py
+python3 moduleC/mock_module_c.py
 ```
 
 ## 可选参数
@@ -30,9 +30,9 @@ python3 moduleCD/mock_module_cd.py
 - `--disable-ocr`：禁用数字类交通标志 OCR 主识别（默认启用 OCR）
 - `--ocr-min-conf`：OCR 主识别置信度阈值，默认 `0.4`
 - `--save-vis`：保存可视化检测图
-- `--vis-dir`：可视化输出目录（与 `--save-vis` 配合，默认写入 `moduleCD/coreDetector/outputs`）
+- `--vis-dir`：可视化输出目录（与 `--save-vis` 配合，默认写入 `moduleC/coreDetector/outputs`）
 
 ## OCR 启动检查
 
 默认启用 OCR 时，`CoreDetector` 启动会执行 EasyOCR 自检（导入 + Reader 初始化）。
-若缺少 `easyocr` 依赖，或首次模型下载失败，moduleCD 将直接启动失败并报错退出。
+若缺少 `easyocr` 依赖，或首次模型下载失败，moduleC 将直接启动失败并报错退出。

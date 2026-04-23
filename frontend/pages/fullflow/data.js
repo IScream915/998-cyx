@@ -24,7 +24,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.84,
           speed: 46,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 101,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -43,7 +43,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=101",
           "moduleB 场景识别: city street (84.0%)",
-          "moduleCD 检测到限速标志 1 个，行人 2 个，车辆 7 个",
+          "moduleC 检测到限速标志 1 个，行人 2 个，车辆 7 个",
           "moduleE 触发提醒: 前方限速40公里，请减速慢行",
         ],
       },
@@ -61,7 +61,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.79,
           speed: 48,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 102,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -80,7 +80,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=102",
           "moduleB 场景识别: city street (79.0%)",
-          "moduleCD 行人密度上升，检测到人行横道标志",
+          "moduleC 行人密度上升，检测到人行横道标志",
           "moduleE 触发提醒: 前方人行横道，请礼让行人",
         ],
       },
@@ -98,7 +98,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.82,
           speed: 41,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 103,
           num_traffic_signs: 0,
           traffic_signs: [],
@@ -115,7 +115,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=103",
           "moduleB 场景识别: city street (82.0%)",
-          "moduleCD 未检测到新交通标志",
+          "moduleC 未检测到新交通标志",
           "moduleE 输出静默建议: 保持当前车速，注意前方车流",
         ],
       },
@@ -146,7 +146,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.93,
           speed: 98,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 201,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -165,7 +165,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=201",
           "moduleB 场景识别: highway (93.0%)",
-          "moduleCD 检测到限速 80 标志",
+          "moduleC 检测到限速 80 标志",
           "moduleE 触发超速提醒: 您已超速，当前限速80公里",
         ],
       },
@@ -183,7 +183,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.9,
           speed: 82,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 202,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -202,7 +202,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=202",
           "moduleB 场景识别: highway (90.0%)",
-          "moduleCD 检测到禁止超车标志",
+          "moduleC 检测到禁止超车标志",
           "moduleE 触发提醒: 前方禁止超车，请保持车距",
         ],
       },
@@ -220,7 +220,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.88,
           speed: 78,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 203,
           num_traffic_signs: 0,
           traffic_signs: [],
@@ -237,7 +237,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=203",
           "moduleB 场景识别: highway (88.0%)",
-          "moduleCD 无新增风险标志",
+          "moduleC 无新增风险标志",
           "moduleE 输出静默建议: 车速恢复正常",
         ],
       },
@@ -268,7 +268,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.89,
           speed: 72,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 301,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -287,7 +287,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=301",
           "moduleB 场景识别: tunnel (89.0%)",
-          "moduleCD 检测到限速60标志，车流较密",
+          "moduleC 检测到限速60标志，车流较密",
           "moduleE 触发提醒: 隧道路段请降速，当前限速60公里",
         ],
       },
@@ -305,7 +305,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.86,
           speed: 65,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 302,
           num_traffic_signs: 1,
           traffic_signs: [
@@ -324,7 +324,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=302",
           "moduleB 场景识别: tunnel (86.0%)",
-          "moduleCD 检测到禁止鸣笛标志",
+          "moduleC 检测到禁止鸣笛标志",
           "moduleE 触发提醒: 隧道内禁止鸣笛，请平稳驾驶",
         ],
       },
@@ -342,7 +342,7 @@ export const FULLFLOW_SCENARIOS = [
           conference: 0.85,
           speed: 58,
         },
-        moduleCD: {
+        moduleC: {
           frame_id: 303,
           num_traffic_signs: 0,
           traffic_signs: [],
@@ -359,7 +359,7 @@ export const FULLFLOW_SCENARIOS = [
         log: [
           "moduleA 发布 frame_id=303",
           "moduleB 场景识别: tunnel (85.0%)",
-          "moduleCD 当前帧无新增标志",
+          "moduleC 当前帧无新增标志",
           "moduleE 输出静默建议: 即将驶出隧道，请关注光线变化",
         ],
       },
