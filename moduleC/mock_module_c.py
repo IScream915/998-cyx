@@ -552,6 +552,7 @@ def main() -> None:
         image_relpath: Optional[str] = None,
         frame_index: Optional[int] = None,
         frame_total: Optional[int] = None,
+        yolo_overlay_base64: Optional[str] = None,
     ) -> dict[str, Any]:
         traffic_signs = _slim_detections(detect_result.get("traffic_signs", []), include_class_name=True)
         pedestrians = _slim_detections(detect_result.get("pedestrians", []))
@@ -575,6 +576,8 @@ def main() -> None:
             payload["image_relpath"] = image_relpath
             payload["frame_index"] = frame_index
             payload["frame_total"] = frame_total
+            if isinstance(yolo_overlay_base64, str) and yolo_overlay_base64:
+                payload["yolo_overlay_base64"] = yolo_overlay_base64
 
         return payload
 
@@ -589,11 +592,26 @@ def main() -> None:
         frame_total: Optional[int] = None,
         vis_output_path: Optional[str] = None,
     ) -> None:
+        request_overlay = source_mode == "local"
         detect_result = detector.detect_base64(
             image_b64,
             save_visualization=args.save_vis,
             vis_output_path=vis_output_path,
+            return_visualization_base64=request_overlay,
         )
+        yolo_overlay_base64: Optional[str] = None
+        if request_overlay:
+            overlay_value = detect_result.get("visualization_base64")
+            if isinstance(overlay_value, str) and overlay_value:
+                yolo_overlay_base64 = overlay_value
+            else:
+                overlay_error = detect_result.get("visualization_error")
+                if isinstance(overlay_error, str) and overlay_error:
+                    logging.warning(
+                        "frame_id=%s YOLO识别框生成失败，降级仅推送统计: %s",
+                        frame_id,
+                        overlay_error,
+                    )
         payload = build_output_payload(
             frame_id=frame_id,
             detect_result=detect_result,
@@ -602,6 +620,7 @@ def main() -> None:
             image_relpath=image_relpath,
             frame_index=frame_index,
             frame_total=frame_total,
+            yolo_overlay_base64=yolo_overlay_base64,
         )
         publish_payload(payload)
         runtime_state.clear_error()

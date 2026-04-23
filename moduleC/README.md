@@ -39,6 +39,8 @@ python3 moduleC/mock_module_c.py
 
 - `source_mode`：`zmq` 或 `local`
 - local 模式附带：`scene_folder`、`image_relpath`、`frame_index`、`frame_total`
+- local 模式可选：`yolo_overlay_base64`（JPEG base64，无 `data:` 前缀）
+- 若识别框叠加图生成失败，会降级为仅发布检测统计字段，不中断逐帧播放
 
 ## 常用参数
 

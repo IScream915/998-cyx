@@ -338,46 +338,13 @@ class CoreDetector:
         draw.rectangle([x1, y_text_top, x1 + tw + 6, y_text_top + th + 4], fill=color_rgb)
         draw.text((x1 + 3, y_text_top + 2), label, fill=(0, 0, 0), font=font)
 
-    def _save_visualization(
-        self,
-        image_source: str,
-        signs: List[Dict[str, Any]],
-        pedestrians: List[Dict[str, Any]],
-        vehicles: List[Dict[str, Any]],
-        vis_output_path: str,
-    ) -> str:
-        with Image.open(image_source) as im:
-            canvas = im.convert("RGB")
-        draw = ImageDraw.Draw(canvas)
-        font = ImageFont.load_default()
-
-        for d in signs:
-            label = f"{d['class_name']} {d['confidence']:.2f}"
-            self._draw_box(draw, font, d["bbox"], label, (255, 215, 0))
-
-        for d in pedestrians:
-            label = f"person {d['confidence']:.2f}"
-            self._draw_box(draw, font, d["bbox"], label, (0, 220, 80))
-
-        for d in vehicles:
-            cls_name = d["class_name"]
-            label = f"{cls_name} {d['confidence']:.2f}"
-            color = VEHICLE_VIS_COLORS.get(cls_name, (255, 140, 0))
-            self._draw_box(draw, font, d["bbox"], label, color)
-
-        out_path = Path(vis_output_path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        canvas.save(out_path, format="JPEG", quality=92)
-        return str(out_path)
-
-    def _save_visualization_from_pil(
+    def _render_visualization_image(
         self,
         image: Image.Image,
         signs: List[Dict[str, Any]],
         pedestrians: List[Dict[str, Any]],
         vehicles: List[Dict[str, Any]],
-        vis_output_path: str,
-    ) -> str:
+    ) -> Image.Image:
         canvas = image.convert("RGB")
         draw = ImageDraw.Draw(canvas)
         font = ImageFont.load_default()
@@ -396,10 +363,43 @@ class CoreDetector:
             color = VEHICLE_VIS_COLORS.get(cls_name, (255, 140, 0))
             self._draw_box(draw, font, d["bbox"], label, color)
 
+        return canvas
+
+    @staticmethod
+    def _save_visualization_canvas(canvas: Image.Image, vis_output_path: str) -> str:
         out_path = Path(vis_output_path).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         canvas.save(out_path, format="JPEG", quality=92)
         return str(out_path)
+
+    @staticmethod
+    def _encode_jpeg_base64_from_pil(canvas: Image.Image, quality: int = 88) -> str:
+        buffer = BytesIO()
+        canvas.convert("RGB").save(buffer, format="JPEG", quality=quality)
+        return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    def _save_visualization(
+        self,
+        image_source: str,
+        signs: List[Dict[str, Any]],
+        pedestrians: List[Dict[str, Any]],
+        vehicles: List[Dict[str, Any]],
+        vis_output_path: str,
+    ) -> str:
+        with Image.open(image_source) as im:
+            canvas = self._render_visualization_image(im, signs, pedestrians, vehicles)
+        return self._save_visualization_canvas(canvas, vis_output_path)
+
+    def _save_visualization_from_pil(
+        self,
+        image: Image.Image,
+        signs: List[Dict[str, Any]],
+        pedestrians: List[Dict[str, Any]],
+        vehicles: List[Dict[str, Any]],
+        vis_output_path: str,
+    ) -> str:
+        canvas = self._render_visualization_image(image, signs, pedestrians, vehicles)
+        return self._save_visualization_canvas(canvas, vis_output_path)
 
     def _parse_signs(self, results: Any) -> List[Dict[str, Any]]:
         detections: List[Dict[str, Any]] = []
@@ -563,6 +563,7 @@ class CoreDetector:
         image_base64: str,
         save_visualization: bool = False,
         vis_output_path: Optional[str] = None,
+        return_visualization_base64: bool = False,
     ) -> Dict[str, Any]:
         if not isinstance(image_base64, str) or not image_base64.strip():
             raise ValueError("image_base64 must be a non-empty string")
@@ -585,20 +586,26 @@ class CoreDetector:
         signs, pedestrians, vehicles = self._run_detection(image)
         self._apply_ocr_to_signs(image_rgb, signs)
 
-        if save_visualization:
-            if vis_output_path:
-                out = vis_output_path
-            else:
-                out = str((self.output_dir / "base64_detected.jpg").resolve())
-            self._save_visualization_from_pil(
-                image=image,
-                signs=signs,
-                pedestrians=pedestrians,
-                vehicles=vehicles,
-                vis_output_path=out,
-            )
+        visualization_base64: Optional[str] = None
+        visualization_error: Optional[str] = None
 
-        return {
+        if save_visualization or return_visualization_base64:
+            try:
+                canvas = self._render_visualization_image(image, signs, pedestrians, vehicles)
+                if save_visualization:
+                    if vis_output_path:
+                        out = vis_output_path
+                    else:
+                        out = str((self.output_dir / "base64_detected.jpg").resolve())
+                    self._save_visualization_canvas(canvas, out)
+                if return_visualization_base64:
+                    visualization_base64 = self._encode_jpeg_base64_from_pil(canvas)
+            except Exception as exc:
+                visualization_error = str(exc)
+                if save_visualization:
+                    raise
+
+        result = {
             "success": True,
             "image_size": {"width": int(width), "height": int(height)},
             "traffic_signs": signs,
@@ -608,6 +615,11 @@ class CoreDetector:
             "vehicles": vehicles,
             "num_vehicles": len(vehicles),
         }
+        if return_visualization_base64 and isinstance(visualization_base64, str) and visualization_base64:
+            result["visualization_base64"] = visualization_base64
+        if return_visualization_base64 and visualization_error:
+            result["visualization_error"] = visualization_error
+        return result
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

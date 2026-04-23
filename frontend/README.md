@@ -118,7 +118,8 @@ python3 frontend/server.py \
 3. 选择场景后调用 `POST /api/module-c/scene`。
 4. 点击播放/暂停/重置分别调用 `POST /api/module-c/player`。
 5. 页面通过 WebSocket `c_frame` 事件实时刷新图片与 `num_traffic_signs/num_pedestrians/num_vehicles`。
-6. 右侧“YOLO识别框预留窗口”当前为预留容器，后续接入检测框叠加图。
+6. `source_mode=local` 时，若 `moduleC.yolo_overlay_base64` 存在，会在右侧“YOLO识别框预留窗口”实时展示识别框叠加图。
+7. 若某帧识别框生成失败，该帧会降级为仅更新统计字段，页面回退占位态但播放不中断。
 
 ---
 
@@ -141,7 +142,7 @@ python3 frontend/server.py \
 
 - `ab_frame`
 - `c_frame`
-  - local 模式可带：`moduleC.scene_folder/image_relpath/frame_index/frame_total`
+  - local 模式可带：`moduleC.scene_folder/image_relpath/frame_index/frame_total/yolo_overlay_base64`
 - `e_frame`
 - `status`
 
