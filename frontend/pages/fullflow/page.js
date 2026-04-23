@@ -7,6 +7,11 @@ function renderModuleCardBody(body, components, metricRows, payload) {
   body.appendChild(components.createJsonBlock(payload));
 }
 
+function renderModuleMetricBody(body, components, metricRows) {
+  components.clearNode(body);
+  body.appendChild(components.createMetricList(metricRows));
+}
+
 function toNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -46,14 +51,6 @@ function normalizeConfidence(value) {
     return parsed * 100;
   }
   return parsed;
-}
-
-function createPlaceholderPayload(moduleName, reason) {
-  return {
-    module: moduleName,
-    status: "placeholder",
-    reason,
-  };
 }
 
 export function mount(container, { components }) {
@@ -106,17 +103,17 @@ export function mount(container, { components }) {
           <div class="card-body module-grid">
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleA 输入帧</h4>
-                <span class="badge mono">A</span>
-              </div>
-              <div id="card-module-a" class="module-card-body"></div>
-            </section>
-            <section class="module-card">
-              <div class="module-card-head">
                 <h4>moduleB 场景识别</h4>
                 <span class="badge mono">B</span>
               </div>
               <div id="card-module-b" class="module-card-body"></div>
+            </section>
+            <section class="module-card">
+              <div class="module-card-head">
+                <h4>moduleD 盲区监测</h4>
+                <span class="badge mono">D</span>
+              </div>
+              <div id="card-module-a" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
@@ -171,14 +168,13 @@ export function mount(container, { components }) {
   }
 
   function renderStaticCards() {
-    renderModuleCardBody(
+    renderModuleMetricBody(
       cardA,
       components,
       [
         { label: "状态", value: "占位" },
-        { label: "说明", value: "主画面已实时展示A图像" },
+        { label: "说明", value: "当前未接入实时盲区监测数据" },
       ],
-      createPlaceholderPayload("moduleA", "本阶段仅将A图像用于驾驶场景主画面"),
     );
   }
 
@@ -188,7 +184,7 @@ export function mount(container, { components }) {
     const confidence = normalizeConfidence(moduleBPayload?.conference ?? moduleBPayload?.confidence);
     const speed = toNumber(moduleBPayload?.speed);
 
-    renderModuleCardBody(
+    renderModuleMetricBody(
       cardB,
       components,
       [
@@ -197,7 +193,6 @@ export function mount(container, { components }) {
         { label: "confidence", value: confidence === null ? "-" : `${confidence.toFixed(2)}%` },
         { label: "speed", value: speed === null ? "-" : `${Math.round(speed)} km/h` },
       ],
-      moduleBPayload,
     );
   }
 
@@ -206,11 +201,8 @@ export function mount(container, { components }) {
     const numTrafficSigns = toNumber(moduleCPayload?.num_traffic_signs);
     const numPedestrians = toNumber(moduleCPayload?.num_pedestrians);
     const numVehicles = toNumber(moduleCPayload?.num_vehicles);
-    const firstSign = Array.isArray(moduleCPayload?.traffic_signs)
-      ? moduleCPayload.traffic_signs[0]?.class_name ?? "无"
-      : "无";
 
-    renderModuleCardBody(
+    renderModuleMetricBody(
       cardC,
       components,
       [
@@ -218,21 +210,15 @@ export function mount(container, { components }) {
         { label: "traffic_signs", value: numTrafficSigns === null ? "-" : String(Math.trunc(numTrafficSigns)) },
         { label: "pedestrians", value: numPedestrians === null ? "-" : String(Math.trunc(numPedestrians)) },
         { label: "vehicles", value: numVehicles === null ? "-" : String(Math.trunc(numVehicles)) },
-        { label: "主要标志", value: firstSign },
       ],
-      moduleCPayload,
     );
   }
 
   function renderModuleE(moduleEPayload, fallbackFrameId) {
-    const frameId = moduleEPayload?.frame_id ?? fallbackFrameId;
     const status = typeof moduleEPayload?.status === "string" ? moduleEPayload.status : "unknown";
     const scene = typeof moduleEPayload?.scene === "string" ? moduleEPayload.scene : "-";
     const speed = toNumber(moduleEPayload?.speed);
-    const detectedSigns = Array.isArray(moduleEPayload?.detected_signs)
-      ? moduleEPayload.detected_signs.length
-      : null;
-    const errorType = typeof moduleEPayload?.error_type === "string" ? moduleEPayload.error_type : "";
+    const detectedSigns = moduleEPayload?.detected_signs;
 
     let statusTone = "";
     if (status === "processed") {
@@ -244,20 +230,19 @@ export function mount(container, { components }) {
     }
 
     const metricRows = [
-      { label: "frame_id", value: String(frameId ?? "-") },
       { label: "status", value: status, tone: statusTone },
       { label: "scene", value: scene },
       { label: "speed", value: speed === null ? "-" : `${Math.round(speed)} km/h` },
       {
         label: "detected_signs",
-        value: detectedSigns === null ? "-" : String(detectedSigns),
+        value: Array.isArray(detectedSigns)
+          ? detectedSigns.join(", ") || "-"
+          : detectedSigns === undefined || detectedSigns === null
+            ? "-"
+            : String(detectedSigns),
       },
     ];
-    if (errorType) {
-      metricRows.push({ label: "error_type", value: errorType, tone: "danger" });
-    }
-
-    renderModuleCardBody(cardE, components, metricRows, moduleEPayload);
+    renderModuleMetricBody(cardE, components, metricRows);
   }
 
   function renderFrame(payload) {

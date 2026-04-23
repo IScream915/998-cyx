@@ -77,6 +77,43 @@ class ABWsBridge:
         except (TypeError, ValueError) as exc:
             raise ValueError(f"frame_id 非法: {value!r}") from exc
 
+    @staticmethod
+    def _to_float(value: Any) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed == parsed else None  # NaN guard
+
+    @staticmethod
+    def _to_non_negative_int(value: Any) -> int | None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    def _compact_module_b_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
+        confidence = self._to_float(payload.get("confidence"))
+        if confidence is None:
+            confidence = self._to_float(payload.get("conference"))
+
+        compact = {
+            "frame_id": frame_id,
+            "scene": payload.get("scene", "unknown"),
+            "confidence": confidence,
+            "speed": self._to_float(payload.get("speed")),
+        }
+        return compact
+
+    def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
+        return {
+            "frame_id": frame_id,
+            "num_traffic_signs": self._to_non_negative_int(payload.get("num_traffic_signs")),
+            "num_pedestrians": self._to_non_negative_int(payload.get("num_pedestrians")),
+            "num_vehicles": self._to_non_negative_int(payload.get("num_vehicles")),
+        }
+
     def _parse_json_message(self, frames: list[bytes], subscribed_topic: str) -> tuple[str, dict[str, Any]]:
         if not frames:
             raise ValueError("空消息帧")
@@ -184,15 +221,16 @@ class ABWsBridge:
 
     async def _on_b_message(self, payload: dict[str, Any], now: float) -> None:
         frame_id = self._parse_frame_id(payload.get("frame_id"))
+        compact_payload = self._compact_module_b_payload(payload, frame_id)
 
         entry = self.pending.setdefault(frame_id, {"first_ts": now, "a": None, "b": None})
-        entry["b"] = {"frame_id": frame_id, "payload": payload}
+        entry["b"] = {"frame_id": frame_id, "payload": compact_payload}
 
         if entry["a"] is not None:
             matched = MatchedFrame(
                 frame_id=frame_id,
                 image_base64=entry["a"]["image_base64"],
-                module_b=payload,
+                module_b=compact_payload,
             )
             self.stats["matched"] += 1
             del self.pending[frame_id]
@@ -200,11 +238,12 @@ class ABWsBridge:
 
     async def _on_c_message(self, payload: dict[str, Any]) -> None:
         frame_id = self._parse_frame_id(payload.get("frame_id"))
+        compact_payload = self._compact_module_c_payload(payload, frame_id)
         await self._broadcast(
             {
                 "event": "c_frame",
                 "frame_id": frame_id,
-                "moduleC": payload,
+                "moduleC": compact_payload,
                 "ts": time.time(),
             }
         )

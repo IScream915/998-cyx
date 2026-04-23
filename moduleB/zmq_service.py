@@ -205,6 +205,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="订阅 topic，默认 Frame")
     parser.add_argument("--publish_bind", default="tcp://*:5052", help="发布地址，供 moduleE 订阅")
     parser.add_argument("--publish_topic", default="Frame", help="发布 topic，默认 Frame")
+    parser.add_argument(
+        "--publish_rate_hz",
+        type=float,
+        default=0.0,
+        help="发布限速(Hz)，<=0 表示不限制",
+    )
     parser.add_argument("--timeout_ms", type=int, default=1000, help="接收超时(ms)")
     parser.add_argument("--reconnect_delay", type=float, default=1.0, help="重连等待(秒)")
     parser.add_argument("--checkpoint", type=str, default=DEFAULT_CHECKPOINT, help="模型检查点路径")
@@ -224,6 +230,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_arg_parser()
     args = parser.parse_args()
+
+    if args.publish_rate_hz < 0:
+        parser.error("--publish_rate_hz 不能为负数")
 
     logging.basicConfig(
         level=logging.INFO,
@@ -257,6 +266,14 @@ def main() -> None:
     publisher = publish_context.socket(zmq.PUB)
     publisher.bind(args.publish_bind)
     logging.info("已启动发布端: %s, topic=%r", args.publish_bind, args.publish_topic)
+    min_publish_interval = 1.0 / args.publish_rate_hz if args.publish_rate_hz > 0 else 0.0
+    if min_publish_interval > 0:
+        logging.info(
+            "发布限速已启用: %.3f Hz (最小间隔 %.3f 秒)",
+            args.publish_rate_hz,
+            min_publish_interval,
+        )
+    last_publish_at: Optional[float] = None
 
     def handle_signal(signum: int, _frame: Any) -> None:
         logging.info("收到信号 %s，正在停止订阅服务", signum)
@@ -266,6 +283,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
 
     def process_message(payload: dict[str, Any], _topic: Optional[str]) -> None:
+        nonlocal last_publish_at
         frame_id, image_b64 = _extract_frame_and_image(payload)
         speed = _extract_speed_kmh(payload)
         image = decode_base64_to_pil_image(image_b64)
@@ -279,7 +297,14 @@ def main() -> None:
             "speed": speed,
         }
         result_json = json.dumps(result, ensure_ascii=False)
+
+        if min_publish_interval > 0 and last_publish_at is not None:
+            elapsed = time.monotonic() - last_publish_at
+            if elapsed < min_publish_interval:
+                time.sleep(min_publish_interval - elapsed)
+
         publisher.send_multipart([args.publish_topic.encode("utf-8"), result_json.encode("utf-8")])
+        last_publish_at = time.monotonic()
 
         print(result_json)
         sys.stdout.flush()
