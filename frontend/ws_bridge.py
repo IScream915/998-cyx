@@ -168,6 +168,24 @@ class ABWsBridge:
             compact["yolo_overlay_base64"] = yolo_overlay_base64
         return compact
 
+    def _compact_module_a_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
+        sync_meta = payload.get("sync_meta")
+        if not isinstance(sync_meta, dict):
+            sync_meta = {}
+
+        def _ensure_json_object(value: Any) -> dict[str, Any]:
+            return value if isinstance(value, dict) else {}
+
+        return {
+            "frame_id": frame_id,
+            "sync_meta": {
+                "time_offsets": _ensure_json_object(sync_meta.get("time_offsets")),
+                "kf_residuals": _ensure_json_object(sync_meta.get("kf_residuals")),
+                "quality_scores": _ensure_json_object(sync_meta.get("quality_scores")),
+                "alignment_errors": _ensure_json_object(sync_meta.get("alignment_errors")),
+            },
+        }
+
     def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
         compact = {
             "frame_id": frame_id,
@@ -266,6 +284,16 @@ class ABWsBridge:
     async def _on_a_message(self, payload: dict[str, Any], now: float) -> None:
         frame_id = self._parse_frame_id(payload.get("frame_id"))
         image_base64 = self._extract_image_from_a(payload)
+        compact_payload = self._compact_module_a_payload(payload, frame_id)
+
+        await self._broadcast(
+            {
+                "event": "a_frame",
+                "frame_id": frame_id,
+                "moduleA": compact_payload,
+                "ts": time.time(),
+            }
+        )
 
         entry = self.pending.setdefault(frame_id, {"first_ts": now, "a": None, "b": None})
         entry["a"] = {

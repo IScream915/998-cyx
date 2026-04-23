@@ -137,12 +137,10 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">实时日志流</h3>
+            <h3 class="card-title">模块A数据</h3>
           </div>
         </header>
-        <div class="card-body">
-          <ol id="fullflow-log-list" class="log-list"></ol>
-        </div>
+        <div id="module-a-data" class="card-body fullflow-module-a-data"></div>
       </article>
     </section>
   `;
@@ -157,7 +155,7 @@ export function mount(container, { components }) {
   const cardB = container.querySelector("#card-module-b");
   const cardD = container.querySelector("#card-module-d");
   const cardE = container.querySelector("#card-module-e");
-  const logList = container.querySelector("#fullflow-log-list");
+  const moduleADataRoot = container.querySelector("#module-a-data");
 
   function setWsStatus(text, tone = "") {
     wsStatusBadge.className = `badge${tone ? ` ${tone}` : ""}`;
@@ -165,7 +163,10 @@ export function mount(container, { components }) {
   }
 
   function pushLog(text) {
-    components.appendLog(logList, { text }, 80);
+    if (!text) {
+      return;
+    }
+    console.info(`[fullflow] ${text}`);
   }
 
   function renderStaticCards() {
@@ -177,6 +178,35 @@ export function mount(container, { components }) {
         { label: "tracked_pedestrians", value: "-" },
       ],
     );
+  }
+
+  function renderModuleAData(moduleAPayload, fallbackFrameId) {
+    const frameId = moduleAPayload?.frame_id ?? fallbackFrameId;
+    const syncMeta =
+      moduleAPayload?.sync_meta && typeof moduleAPayload.sync_meta === "object" ? moduleAPayload.sync_meta : {};
+    const fieldNames = ["time_offsets", "kf_residuals", "quality_scores", "alignment_errors"];
+
+    components.clearNode(moduleADataRoot);
+    moduleADataRoot.appendChild(
+      components.createMetricList([
+        { label: "frame_id", value: String(frameId ?? "-") },
+      ]),
+    );
+
+    for (const fieldName of fieldNames) {
+      const rawValue = syncMeta[fieldName];
+      const fieldPayload =
+        rawValue && typeof rawValue === "object" && !Array.isArray(rawValue) ? rawValue : {};
+
+      const section = document.createElement("section");
+      section.className = "fullflow-a-field";
+      const title = document.createElement("p");
+      title.className = "fullflow-a-field-title mono";
+      title.textContent = fieldName;
+      section.appendChild(title);
+      section.appendChild(components.createJsonBlock(fieldPayload));
+      moduleADataRoot.appendChild(section);
+    }
   }
 
   function renderModuleC(moduleCPayload, fallbackFrameId) {
@@ -311,6 +341,19 @@ export function mount(container, { components }) {
     pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
   }
 
+  function renderAFrame(payload) {
+    const frameId = toNumber(payload?.frame_id);
+    if (frameId === null) {
+      pushLog("收到a_frame但frame_id非法，已忽略");
+      return;
+    }
+
+    const moduleAPayload =
+      payload?.moduleA && typeof payload.moduleA === "object" ? payload.moduleA : {};
+    renderModuleAData(moduleAPayload, Math.trunc(frameId));
+    pushLog(`接收模块A输出 frame_id=${Math.trunc(frameId)}，已更新模块A数据`);
+  }
+
   function renderEFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
@@ -380,6 +423,10 @@ export function mount(container, { components }) {
       const evt = payload?.event;
       if (evt === "ab_frame") {
         renderFrame(payload);
+        return;
+      }
+      if (evt === "a_frame") {
+        renderAFrame(payload);
         return;
       }
       if (evt === "d_frame") {
@@ -461,6 +508,7 @@ export function mount(container, { components }) {
   }
 
   renderStaticCards();
+  renderModuleAData({}, null);
   renderModuleC({}, null);
   renderModuleB({}, null);
   renderModuleD({}, null);
