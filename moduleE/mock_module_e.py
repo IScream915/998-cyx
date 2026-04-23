@@ -142,6 +142,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--timeout_ms", type=int, default=10, help="轮询等待(ms)")
     parser.add_argument("--match_timeout_ms", type=int, default=1500, help="同一 frame_id 配对超时(ms)")
+    parser.add_argument(
+        "--fallback_mode",
+        type=str,
+        default="auto",
+        choices=["auto", "frame_match", "latest"],
+        help="融合模式: auto=先配对后自动退化, frame_match=始终配对, latest=始终取最新",
+    )
+    parser.add_argument(
+        "--fallback_drop_threshold",
+        type=int,
+        default=8,
+        help="auto模式下触发退化的配对超时丢弃阈值(累计)",
+    )
+    parser.add_argument(
+        "--fallback_mismatch_streak",
+        type=int,
+        default=20,
+        help="auto模式下触发退化的连续frame_id不一致阈值",
+    )
     parser.add_argument("--publish_bind", default="tcp://*:5054", help="处理结果发布地址")
     parser.add_argument("--publish_topic", default="Frame", help="处理结果发布 topic")
 
@@ -200,12 +219,73 @@ def main() -> None:
 
     print(f"[moduleE] SUB 已连接: {', '.join(endpoints)}, topic={args.topic}")
     print(f"[moduleE] PUB 已启动: {args.publish_bind}, topic={args.publish_topic}")
-    print("[moduleE] B+CD 按 frame_id 对齐后将调用 TrafficReminder 引擎处理")
+    print(
+        "[moduleE] 融合模式: "
+        f"{args.fallback_mode} "
+        f"(drop阈值={args.fallback_drop_threshold}, "
+        f"mismatch阈值={args.fallback_mismatch_streak})"
+    )
     print("[moduleE] 按 Ctrl+C 停止")
 
     pending: Dict[int, Dict[str, Any]] = {}
+    latest_payloads: Dict[str, Dict[str, Any]] = {"B": {}, "CD": {}}
+    latest_frame_ids: Dict[str, int] = {}
     dropped_timeout = 0
+    mismatch_streak = 0
+    effective_mode = "frame_match" if args.fallback_mode in ("auto", "frame_match") else "latest"
     last_stat_log_ts = time.monotonic()
+
+    def emit_result(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict[str, Any]) -> None:
+        speed = _extract_speed(b_payload, args.default_speed)
+        perception = _build_perception(frame_id, b_payload, cd_payload)
+
+        try:
+            engine.update_telematics({"speed": speed})
+            engine.update_perception(perception)
+
+            result = {
+                "frame_id": frame_id,
+                "status": "processed",
+                "scene": perception.get("scene", "unknown"),
+                "speed": speed,
+                "detected_signs": perception.get("detected_signs", []),
+            }
+        except Exception as exc:
+            result = {
+                "frame_id": frame_id,
+                "status": "process_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+
+        result_text = json.dumps(result, ensure_ascii=False)
+        publisher.send_multipart([args.publish_topic.encode("utf-8"), result_text.encode("utf-8")])
+        print(result_text)
+
+    def maybe_switch_to_latest(now: float) -> None:
+        nonlocal effective_mode
+        if args.fallback_mode != "auto" or effective_mode == "latest":
+            return
+
+        triggered = False
+        reason = ""
+        if args.fallback_drop_threshold >= 0 and dropped_timeout >= args.fallback_drop_threshold:
+            triggered = True
+            reason = f"配对超时丢弃累计={dropped_timeout}"
+        elif args.fallback_mismatch_streak > 0 and mismatch_streak >= args.fallback_mismatch_streak:
+            triggered = True
+            reason = f"连续frame_id不一致={mismatch_streak}"
+
+        if not triggered:
+            return
+
+        effective_mode = "latest"
+        pending.clear()
+        print(f"[moduleE] ⚠️ 检测到严重不匹配，已切换为最新消息模式: {reason}")
+        if latest_payloads["B"] and latest_payloads["CD"]:
+            latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("CD", 0))
+            emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["CD"])
+            print(f"[moduleE] latest模式立即输出一次，frame_id={latest_frame_id}, ts={now:.3f}")
 
     try:
         while running:
@@ -240,6 +320,22 @@ def main() -> None:
                 except (TypeError, ValueError):
                     continue
 
+                latest_payloads[label] = payload
+                latest_frame_ids[label] = frame_id
+                if "B" in latest_frame_ids and "CD" in latest_frame_ids:
+                    if latest_frame_ids["B"] == latest_frame_ids["CD"]:
+                        mismatch_streak = 0
+                    else:
+                        mismatch_streak += 1
+
+                maybe_switch_to_latest(now)
+
+                if effective_mode == "latest":
+                    if latest_payloads["B"] and latest_payloads["CD"]:
+                        latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("CD", frame_id))
+                        emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["CD"])
+                    continue
+
                 if frame_id not in pending:
                     pending[frame_id] = {"first_ts": now, "B": None, "CD": None}
 
@@ -247,54 +343,28 @@ def main() -> None:
                 entry = pending[frame_id]
 
                 if entry["B"] is not None and entry["CD"] is not None:
-                    b_payload: Dict[str, Any] = entry["B"]
-                    cd_payload: Dict[str, Any] = entry["CD"]
-
-                    speed = _extract_speed(b_payload, args.default_speed)
-                    perception = _build_perception(frame_id, b_payload, cd_payload)
-
-                    try:
-                        engine.update_telematics({"speed": speed})
-                        engine.update_perception(perception)
-
-                        result = {
-                            "frame_id": frame_id,
-                            "status": "processed",
-                            "scene": perception.get("scene", "unknown"),
-                            "speed": speed,
-                            "detected_signs": perception.get("detected_signs", []),
-                        }
-                    except Exception as exc:
-                        result = {
-                            "frame_id": frame_id,
-                            "status": "process_error",
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
-                        }
-
-                    result_text = json.dumps(result, ensure_ascii=False)
-                    publisher.send_multipart(
-                        [args.publish_topic.encode("utf-8"), result_text.encode("utf-8")]
-                    )
-                    print(result_text)
+                    emit_result(frame_id, entry["B"], entry["CD"])
                     del pending[frame_id]
 
             # 超时未配齐的 frame_id 直接丢弃，保证低延迟
-            expire_before = now - (args.match_timeout_ms / 1000.0)
-            expired_ids = [
-                frame_id
-                for frame_id, entry in pending.items()
-                if entry["first_ts"] < expire_before
-            ]
-            for frame_id in expired_ids:
-                del pending[frame_id]
-                dropped_timeout += 1
+            if effective_mode == "frame_match":
+                expire_before = now - (args.match_timeout_ms / 1000.0)
+                expired_ids = [
+                    frame_id
+                    for frame_id, entry in pending.items()
+                    if entry["first_ts"] < expire_before
+                ]
+                for frame_id in expired_ids:
+                    del pending[frame_id]
+                    dropped_timeout += 1
+                maybe_switch_to_latest(now)
 
             # 低频输出统计，便于定位“无输出”是否由超时丢弃导致
             if dropped_timeout > 0 and (now - last_stat_log_ts) >= 1.0:
                 print(
-                    f"[moduleE] 配对超时丢弃累计: {dropped_timeout}, "
-                    f"当前待配对: {len(pending)}, match_timeout_ms={args.match_timeout_ms}"
+                    f"[moduleE] mode={effective_mode}, 配对超时丢弃累计: {dropped_timeout}, "
+                    f"连续mismatch: {mismatch_streak}, 当前待配对: {len(pending)}, "
+                    f"match_timeout_ms={args.match_timeout_ms}"
                 )
                 last_stat_log_ts = now
     finally:
