@@ -171,6 +171,13 @@ export function mount(container, { components }) {
     components.appendLog(logList, { text, tone }, 120);
   }
 
+  function clearDisplayQueue() {
+    state.lastInput = null;
+    renderInput(null);
+    renderOutput({});
+    components.clearNode(logList);
+  }
+
   async function apiJson(url, options = {}) {
     const response = await fetch(url, {
       ...options,
@@ -315,6 +322,20 @@ export function mount(container, { components }) {
     const processedCount = Math.trunc(toNumber(demoState?.state?.processed_count) ?? 0);
     const processErrorCount = Math.trunc(toNumber(demoState?.state?.process_error_count) ?? 0);
     const ttsQueue = Math.trunc(toNumber(demoState?.state?.engine?.tts_queue_size) ?? 0);
+    const ttsState = demoState?.state?.engine?.tts && typeof demoState.state.engine.tts === "object"
+      ? demoState.state.engine.tts
+      : {};
+    const ttsWorkerAlive = ttsState.worker_alive === true;
+    const ttsBackend = typeof ttsState.backend === "string" && ttsState.backend ? ttsState.backend : "-";
+    const ttsVoice = typeof ttsState.voice_name === "string" && ttsState.voice_name
+      ? ttsState.voice_name
+      : typeof ttsState.voice_id === "string" && ttsState.voice_id
+        ? ttsState.voice_id
+        : "-";
+    const ttsLastError = typeof ttsState.last_error === "string" && ttsState.last_error ? ttsState.last_error : "-";
+    const ttsEnqueueCount = Math.trunc(toNumber(ttsState.enqueue_count) ?? 0);
+    const ttsSpokenCount = Math.trunc(toNumber(ttsState.spoken_count) ?? 0);
+    const ttsDropCount = Math.trunc(toNumber(ttsState.drop_count) ?? 0);
 
     components.clearNode(gatewayMetrics);
     gatewayMetrics.appendChild(
@@ -327,6 +348,13 @@ export function mount(container, { components }) {
         { label: "processed_count", value: String(processedCount) },
         { label: "process_error_count", value: String(processErrorCount) },
         { label: "tts_queue_size", value: String(ttsQueue) },
+        { label: "tts_worker_alive", value: ttsWorkerAlive ? "true" : "false", tone: ttsWorkerAlive ? "success" : "danger" },
+        { label: "tts_backend", value: ttsBackend },
+        { label: "tts_voice", value: ttsVoice },
+        { label: "tts_enqueue_count", value: String(ttsEnqueueCount) },
+        { label: "tts_spoken_count", value: String(ttsSpokenCount) },
+        { label: "tts_drop_count", value: String(ttsDropCount) },
+        { label: "tts_last_error", value: ttsLastError, tone: ttsLastError === "-" ? "" : "danger" },
       ]),
     );
   }
@@ -398,11 +426,12 @@ export function mount(container, { components }) {
   async function resetEngineState() {
     try {
       resetBtn.disabled = true;
-      const payload = await apiJson("/api/module-e/reset", {
+      await apiJson("/api/module-e/reset", {
         method: "POST",
         body: JSON.stringify({}),
       });
-      appendLog(`重置成功 reset_at=${Math.trunc(toNumber(payload.reset_at) ?? Date.now() / 1000)}`, "warn");
+      clearDisplayQueue();
+      await refreshGatewayState();
     } catch (error) {
       appendLog(`重置失败: ${error?.message ?? "unknown error"}`, "danger");
     } finally {

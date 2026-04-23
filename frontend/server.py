@@ -694,6 +694,18 @@ class _FrameBroadcaster:
         with self._condition:
             return len(self._clients)
 
+    def clear_pending(self) -> None:
+        with self._condition:
+            self._latest_payload = None
+            self._latest_version = self._published_version
+            clients = list(self._clients)
+        for client_queue in clients:
+            while True:
+                try:
+                    client_queue.get_nowait()
+                except queue.Empty:
+                    break
+
     def _run(self) -> None:
         next_allowed = 0.0
         while True:
@@ -1111,6 +1123,9 @@ class _ModuleESimGateway:
             reset_ts = time.time()
         with self._state_lock:
             self.last_reset_at = reset_ts
+            self.last_output = None
+            self.last_error = None
+        self._broadcaster.clear_pending()
         return {"ok": True, "reset_at": reset_ts}
 
     def demo_ready(self) -> tuple[bool, str]:

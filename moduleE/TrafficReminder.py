@@ -10,6 +10,9 @@ from scipy.spatial.distance import cosine
 import logging
 import json
 import os
+import shutil
+import subprocess
+import sys
 
 
 try:
@@ -17,7 +20,10 @@ try:
 except ImportError:
     raise ImportError("请安装 ‘sentence-transformers’ 以支持语义向量功能")
 
-import pyttsx3
+try:
+    import pyttsx3
+except Exception:
+    pyttsx3 = None
 
 # 屏蔽 comtypes 的日志输出
 logging.getLogger('comtypes').setLevel(logging.CRITICAL)
@@ -50,54 +56,207 @@ class AsyncTTSManager:
     def __init__(self):
         self.audio_queue = queue.PriorityQueue()
         self.is_running = True
+        self._state_lock = threading.Lock()
+        self.last_error = ""
+        self.last_enqueue_text = ""
+        self.last_enqueue_ts = 0.0
+        self.last_spoken_text = ""
+        self.last_spoken_ts = 0.0
+        self.voice_id = ""
+        self.voice_name = ""
+        self.init_fail_count = 0
+        self.enqueue_count = 0
+        self.spoken_count = 0
+        self.drop_count = 0
+        self.tts_backend = self._resolve_backend()
+        self.p0_clear_enabled = os.getenv("MODULE_E_TTS_P0_CLEAR_QUEUE", "0").strip().lower() in ("1", "true", "yes")
+        print(f">> [System] TTS 后端: {self.tts_backend} (P0清队列={'on' if self.p0_clear_enabled else 'off'})")
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="TTS-Worker")
         self.worker_thread.start()
 
-    def _worker_loop(self):
-        try:
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 170)
-            engine.setProperty('volume', 1.0)
-            # 尝试设置中文
-            for voice in engine.getProperty('voices'):
-                if "Chinese" in voice.name or "Huihui" in voice.name:
-                    engine.setProperty('voice', voice.id)
-                    break
-        except Exception as e:
-            print(f">> [Error] TTS 引擎初始化失败: {e}")
-            return
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        normalized = str(text or "").replace("\n", " ").strip()
+        # 去掉 emoji 等扩展平面字符，避免部分 TTS 后端在 runAndWait 阶段崩溃。
+        normalized = re.sub(r"[\U00010000-\U0010FFFF]", "", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
 
+    def _resolve_backend(self) -> str:
+        raw = os.getenv("MODULE_E_TTS_BACKEND", "auto").strip().lower()
+        requested = raw if raw in ("auto", "pyttsx3", "say") else "auto"
+
+        if requested == "say":
+            if shutil.which("say"):
+                return "say"
+            print(">> [Warn] 已指定 MODULE_E_TTS_BACKEND=say，但系统无 say 命令，回退 pyttsx3")
+            return "pyttsx3"
+
+        if requested == "pyttsx3":
+            return "pyttsx3"
+
+        # auto: macOS 优先 say（演示场景更稳定），其余平台走 pyttsx3
+        if sys.platform == "darwin" and shutil.which("say"):
+            return "say"
+        return "pyttsx3"
+
+    def _set_error(self, message: str) -> None:
+        with self._state_lock:
+            self.last_error = message
+        print(f">> [Error] {message}")
+
+    def _build_engine(self):
+        if pyttsx3 is None:
+            raise RuntimeError("pyttsx3 未安装")
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 170)
+        engine.setProperty('volume', 1.0)
+
+        selected_voice_id = ""
+        selected_voice_name = ""
+        voices = engine.getProperty('voices') or []
+        for voice in voices:
+            voice_name = str(getattr(voice, "name", "") or "")
+            lower_name = voice_name.lower()
+            if any(key in lower_name for key in ("chinese", "mandarin", "huihui", "ting-ting", "sin-ji")):
+                selected_voice_id = str(getattr(voice, "id", "") or "")
+                selected_voice_name = voice_name
+                break
+
+        if selected_voice_id:
+            engine.setProperty('voice', selected_voice_id)
+
+        with self._state_lock:
+            self.voice_id = selected_voice_id
+            self.voice_name = selected_voice_name
+            self.last_error = ""
+
+        if selected_voice_name:
+            print(f">> [System] TTS 语音已选择: {selected_voice_name}")
+        else:
+            print(">> [Warn] 未匹配到中文语音，使用系统默认语音。")
+        return engine
+
+    def _speak_with_say(self, text: str) -> None:
+        cmd = ["say"]
+        voice = os.getenv("MODULE_E_TTS_SAY_VOICE", "").strip()
+        if voice:
+            cmd.extend(["-v", voice])
+            with self._state_lock:
+                self.voice_name = f"say:{voice}"
+                self.voice_id = voice
+        else:
+            with self._state_lock:
+                self.voice_name = "say:default"
+                self.voice_id = "say-default"
+        cmd.append(text)
+
+        completed = subprocess.run(cmd, capture_output=True, text=True)
+        if completed.returncode != 0:
+            stderr_text = (completed.stderr or "").strip()
+            raise RuntimeError(stderr_text or f"say 命令执行失败(returncode={completed.returncode})")
+
+    def _worker_loop(self):
+        engine = None
         while self.is_running:
+            if self.tts_backend == "pyttsx3" and engine is None:
+                try:
+                    engine = self._build_engine()
+                except Exception as e:
+                    with self._state_lock:
+                        self.init_fail_count += 1
+                    self._set_error(f"TTS 引擎初始化失败: {type(e).__name__}: {e}")
+                    time.sleep(2.0)
+                    continue
+
             try:
                 priority, text = self.audio_queue.get(timeout=0.5)
-                # 实际执行播报
-                engine.say(text)
-                engine.runAndWait()
-                self.audio_queue.task_done()
             except queue.Empty:
                 continue
+            try:
+                _ = priority
+                if self.tts_backend == "say":
+                    self._speak_with_say(text)
+                else:
+                    if engine is None:
+                        raise RuntimeError("pyttsx3 引擎未就绪")
+                    engine.say(text)
+                    engine.runAndWait()
+                with self._state_lock:
+                    self.last_spoken_text = text
+                    self.last_spoken_ts = time.time()
+                    self.spoken_count += 1
+                    self.last_error = ""
+            except Exception as e:
+                self._set_error(f"TTS 播报失败: {type(e).__name__}: {e}")
+                if self.tts_backend == "pyttsx3":
+                    try:
+                        if engine is not None:
+                            engine.stop()
+                    except Exception:
+                        pass
+                    engine = None
+            finally:
+                self.audio_queue.task_done()
 
     def speak(self, text: str, priority: int = 2):
-        if priority == 0:
-            self._clear_queue() # 触发熔断抢麦
-        self.audio_queue.put((priority, text))
+        normalized_text = self._sanitize_text(text)
+        if not normalized_text:
+            self._set_error("TTS 文本为空，已跳过播报。")
+            return
+        if priority == 0 and self.p0_clear_enabled:
+            dropped = self._clear_queue()
+            with self._state_lock:
+                self.drop_count += dropped
+        self.audio_queue.put((priority, normalized_text))
+        with self._state_lock:
+            self.last_enqueue_text = normalized_text
+            self.last_enqueue_ts = time.time()
+            self.enqueue_count += 1
 
-    def _clear_queue(self):
+    def _clear_queue(self) -> int:
+        dropped = 0
         while not self.audio_queue.empty():
             try:
                 self.audio_queue.get_nowait()
                 self.audio_queue.task_done()
+                dropped += 1
             except queue.Empty:
                 break
+        return dropped
 
     def clear_queue(self):
-        self._clear_queue()
+        dropped = self._clear_queue()
+        with self._state_lock:
+            self.drop_count += dropped
 
     def queue_size(self) -> int:
         return self.audio_queue.qsize()
+
+    def get_state(self) -> dict:
+        with self._state_lock:
+            return {
+                "worker_alive": self.worker_thread.is_alive(),
+                "queue_size": self.audio_queue.qsize(),
+                "last_error": self.last_error,
+                "last_enqueue_text": self.last_enqueue_text,
+                "last_enqueue_ts": self.last_enqueue_ts,
+                "last_spoken_text": self.last_spoken_text,
+                "last_spoken_ts": self.last_spoken_ts,
+                "voice_name": self.voice_name,
+                "voice_id": self.voice_id,
+                "init_fail_count": self.init_fail_count,
+                "backend": self.tts_backend,
+                "p0_clear_enabled": self.p0_clear_enabled,
+                "enqueue_count": self.enqueue_count,
+                "spoken_count": self.spoken_count,
+                "drop_count": self.drop_count,
+            }
                 
     def stop(self):
         self.is_running = False
+        if self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=1.5)
 
 # ==========================================
 # 3. 模拟数据提供者 (Mock Data Providers)
@@ -349,7 +508,6 @@ class FusionDecisionEngine:
 
     def _evaluate(self) -> Dict[str, Any]:
         """神经-符号融合仲裁逻辑"""
-        current_time = time.time()
         perception = self.blackboard.latest_perception_json
         telematics = self.blackboard.latest_telematics
         current_speed = telematics.get("speed", 0.0)
@@ -360,21 +518,13 @@ class FusionDecisionEngine:
         tracked_obj = perception.get("tracked_pedestrians", {})
         if tracked_obj.get("risk_level") == "HIGH" and tracked_obj.get("in_blind_spot"):
             voice_prompt = "🚨 警报！盲区发现高危目标，立即避让！"
-            if self._can_trigger("P0_BLIND_SPOT", current_time, cooldown=3.0):
-                self._dispatch_alert(voice_prompt, priority=0)
-                return self._build_decision(
-                    code="P0_BLIND_SPOT",
-                    speak=True,
-                    priority=0,
-                    voice_prompt=voice_prompt,
-                    reason="blind_spot_high_risk",
-                )
+            self._dispatch_alert(voice_prompt, priority=0)
             return self._build_decision(
-                code="COOLDOWN_BLOCK",
-                speak=False,
+                code="P0_BLIND_SPOT",
+                speak=True,
                 priority=0,
                 voice_prompt=voice_prompt,
-                reason="p0_cooldown_blocked",
+                reason="blind_spot_high_risk",
             )
 
         # ----------------------------------------------------
@@ -398,15 +548,8 @@ class FusionDecisionEngine:
                 reason="no_valid_sign_text",
             )
 
-        # 性能优化：相同的字符串在短时间内不重复过大模型计算
+        # 演示模式：不做重复OCR拦截，确保每次命中都可触发播报
         with self._state_lock:
-            if clean_text == self.last_processed_ocr:
-                return self._build_decision(
-                    code="COOLDOWN_BLOCK",
-                    speak=False,
-                    priority=None,
-                    reason="ocr_duplicate_blocked",
-                )
             self.last_processed_ocr = clean_text
 
         # Step1: 数字硬匹配（仅限速类）
@@ -480,26 +623,15 @@ class FusionDecisionEngine:
                     f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
                     f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
                 )
-                if self._can_trigger(f"P1_SPEED_{limit_val}", current_time, cooldown=5.0):
-                    self._dispatch_alert(tts_content, priority=1)
-                    return self._build_decision(
-                        code="P1_SPEED",
-                        speak=True,
-                        priority=1,
-                        voice_prompt=tts_content,
-                        match_source=match_source,
-                        matched_event_id=matched_event.event_id,
-                        reason="overspeed_triggered",
-                        semantic_score=semantic_score,
-                    )
+                self._dispatch_alert(tts_content, priority=1)
                 return self._build_decision(
-                    code="COOLDOWN_BLOCK",
-                    speak=False,
+                    code="P1_SPEED",
+                    speak=True,
                     priority=1,
                     voice_prompt=tts_content,
                     match_source=match_source,
                     matched_event_id=matched_event.event_id,
-                    reason="p1_cooldown_blocked",
+                    reason="overspeed_triggered",
                     semantic_score=semantic_score,
                 )
             else:
@@ -527,26 +659,15 @@ class FusionDecisionEngine:
                 f"[{time.strftime('%H:%M:%S')}] 📊 密度评估 level={density_level}, "
                 f"scene={current_scene}, ped={num_pedestrians}, veh={num_vehicles}"
             )
-            if self._can_trigger(f"P2_WARN_{matched_event.event_id}", current_time, cooldown=10.0):
-                self._dispatch_alert(tts_content, priority=2)
-                return self._build_decision(
-                    code="P2_WARN",
-                    speak=True,
-                    priority=2,
-                    voice_prompt=tts_content,
-                    match_source=match_source,
-                    matched_event_id=matched_event.event_id,
-                    reason="warn_triggered",
-                    semantic_score=semantic_score,
-                )
+            self._dispatch_alert(tts_content, priority=2)
             return self._build_decision(
-                code="COOLDOWN_BLOCK",
-                speak=False,
+                code="P2_WARN",
+                speak=True,
                 priority=2,
                 voice_prompt=tts_content,
                 match_source=match_source,
                 matched_event_id=matched_event.event_id,
-                reason="p2_cooldown_blocked",
+                reason="warn_triggered",
                 semantic_score=semantic_score,
             )
 
@@ -559,15 +680,6 @@ class FusionDecisionEngine:
             reason=f"category_not_supported:{matched_event.category}",
             semantic_score=semantic_score,
         )
-
-    def _can_trigger(self, event_key: str, current_time: float, cooldown: float) -> bool:
-        """冷却防抖机制"""
-        with self._state_lock:
-            last_trigger = self.cooldown_tracker.get(event_key, 0.0)
-            if (current_time - last_trigger) >= cooldown:
-                self.cooldown_tracker[event_key] = current_time
-                return True
-            return False
 
     def _dispatch_alert(self, tts_content: str, priority: int):
         print(f"[{time.strftime('%H:%M:%S')}] 🔊 仲裁下发 [P{priority}] -> {tts_content}")
@@ -595,11 +707,13 @@ class FusionDecisionEngine:
             cooldown_size = len(self.cooldown_tracker)
             last_processed_ocr = self.last_processed_ocr
             last_decision = dict(self.last_decision)
+        tts_state = self.tts_manager.get_state()
         return {
             "cooldown_size": cooldown_size,
             "last_processed_ocr": last_processed_ocr,
             "last_decision": last_decision,
-            "tts_queue_size": self.tts_manager.queue_size(),
+            "tts_queue_size": int(tts_state.get("queue_size", 0)),
+            "tts": tts_state,
         }
 
     def shutdown(self):
