@@ -17,13 +17,13 @@ from urllib.parse import urlparse
 import zmq
 from PIL import Image
 
-# 兼容以脚本方式运行: python3 moduleC/mock_module_c.py
+# 兼容以脚本方式运行: python3 moduleD/mock_module_d.py
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from moduleC.coreDetector import CoreDetector
-from moduleC.coreDetector.traffic_sign_map import TRAFFIC_SIGN
+from moduleD.coreDetector import CoreDetector
+from moduleD.coreDetector.traffic_sign_map import TRAFFIC_SIGN
 
 DEFAULT_LOCAL_SCENES_ROOT = str((PROJECT_ROOT / "frontend" / "assets" / "scenes").resolve())
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
@@ -169,7 +169,7 @@ def _encode_image_file_to_jpeg_base64(image_path: Path) -> str:
         return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-class ModuleCRuntimeState:
+class ModuleDRuntimeState:
     def __init__(self, scenes_root: Path) -> None:
         self._lock = threading.Lock()
         self._scenes_root = scenes_root
@@ -322,9 +322,9 @@ class ModuleCRuntimeState:
             }
 
 
-def _create_control_handler(runtime_state: ModuleCRuntimeState):
-    class ModuleCControlHandler(BaseHTTPRequestHandler):
-        server_version = "ModuleCControl/1.0"
+def _create_control_handler(runtime_state: ModuleDRuntimeState):
+    class ModuleDControlHandler(BaseHTTPRequestHandler):
+        server_version = "ModuleDControl/1.0"
         protocol_version = "HTTP/1.1"
 
         def log_message(self, format: str, *args: Any) -> None:
@@ -409,11 +409,11 @@ def _create_control_handler(runtime_state: ModuleCRuntimeState):
                 logging.exception("控制接口处理失败: %s", exc)
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "服务内部错误"})
 
-    return ModuleCControlHandler
+    return ModuleDControlHandler
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="模块C：订阅A并调用CoreDetector后发布")
+    parser = argparse.ArgumentParser(description="模块D：订阅A并调用CoreDetector后发布")
     parser.add_argument("--endpoint", default="tcp://localhost:5051", help="订阅地址")
     parser.add_argument("--topic", default="Frame", help="订阅 topic")
     parser.add_argument("--publish_bind", default="tcp://*:5053", help="发布地址，供 moduleE/ws_bridge 订阅")
@@ -485,7 +485,7 @@ def main() -> None:
     if args.save_vis:
         vis_dir.mkdir(parents=True, exist_ok=True)
 
-    runtime_state = ModuleCRuntimeState(scenes_root=scenes_root)
+    runtime_state = ModuleDRuntimeState(scenes_root=scenes_root)
     control_handler = _create_control_handler(runtime_state)
     control_server = ThreadingHTTPServer((args.control_host, args.control_port), control_handler)
     control_thread = threading.Thread(target=control_server.serve_forever, daemon=True)
@@ -499,17 +499,17 @@ def main() -> None:
         socket.setsockopt(zmq.RCVTIMEO, args.timeout_ms)
         socket.setsockopt_string(zmq.SUBSCRIBE, args.topic)
         socket.connect(args.endpoint)
-        logging.info("[moduleC] SUB 已连接: %s, topic=%s", args.endpoint, args.topic)
+        logging.info("[moduleD] SUB 已连接: %s, topic=%s", args.endpoint, args.topic)
         return socket
 
     socket = create_subscriber()
 
     publisher = ctx.socket(zmq.PUB)
     publisher.bind(args.publish_bind)
-    logging.info("[moduleC] PUB 已启动: %s, topic=%s", args.publish_bind, args.publish_topic)
-    logging.info("[moduleC] CoreDetector 已加载")
+    logging.info("[moduleD] PUB 已启动: %s, topic=%s", args.publish_bind, args.publish_topic)
+    logging.info("[moduleD] CoreDetector 已加载")
     logging.info(
-        "[moduleC] 推理配置: num_threads=%s, num_interop_threads=%s, parallel_infer=%s, ocr_enabled=%s, ocr_min_conf=%.2f",
+        "[moduleD] 推理配置: num_threads=%s, num_interop_threads=%s, parallel_infer=%s, ocr_enabled=%s, ocr_min_conf=%.2f",
         args.num_threads,
         args.num_interop_threads,
         not args.disable_parallel_infer,
@@ -713,7 +713,7 @@ def main() -> None:
             pass
 
         ctx.term()
-        logging.info("[moduleC] 已停止")
+        logging.info("[moduleD] 已停止")
 
 
 if __name__ == "__main__":

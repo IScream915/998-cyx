@@ -25,7 +25,7 @@ def source_label(endpoint: str) -> str:
     if endpoint.endswith(":5052"):
         return "B"
     if endpoint.endswith(":5053"):
-        return "CD"
+        return "D"
     return endpoint
 
 
@@ -51,12 +51,12 @@ def _extract_speed(b_payload: Dict[str, Any], default_speed: float) -> float:
     return default_speed
 
 
-def _extract_detected_signs(cd_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _extract_detected_signs(d_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     signs: List[Dict[str, Any]] = []
 
     # 兼容已标准化结构
-    if isinstance(cd_payload.get("detected_signs"), list):
-        for item in cd_payload["detected_signs"]:
+    if isinstance(d_payload.get("detected_signs"), list):
+        for item in d_payload["detected_signs"]:
             if not isinstance(item, dict):
                 continue
             content = item.get("content") or item.get("class_name")
@@ -70,8 +70,8 @@ def _extract_detected_signs(cd_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             )
 
     # 兼容 CoreDetector 输出结构: traffic_signs
-    elif isinstance(cd_payload.get("traffic_signs"), list):
-        for item in cd_payload["traffic_signs"]:
+    elif isinstance(d_payload.get("traffic_signs"), list):
+        for item in d_payload["traffic_signs"]:
             if not isinstance(item, dict):
                 continue
             content = item.get("content") or item.get("class_name")
@@ -85,34 +85,34 @@ def _extract_detected_signs(cd_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             )
 
     # 兼容单值字段
-    elif cd_payload.get("sign_text"):
+    elif d_payload.get("sign_text"):
         signs.append(
             {
-                "content": str(cd_payload["sign_text"]),
-                "confidence": _to_float(cd_payload.get("confidence"), 0.0),
+                "content": str(d_payload["sign_text"]),
+                "confidence": _to_float(d_payload.get("confidence"), 0.0),
             }
         )
 
     return signs
 
 
-def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict[str, Any]) -> Dict[str, Any]:
-    if "num_pedestrians" in cd_payload:
-        num_pedestrians = _to_non_negative_int(cd_payload.get("num_pedestrians"), 0)
+def _build_perception(frame_id: int, b_payload: Dict[str, Any], d_payload: Dict[str, Any]) -> Dict[str, Any]:
+    if "num_pedestrians" in d_payload:
+        num_pedestrians = _to_non_negative_int(d_payload.get("num_pedestrians"), 0)
     else:
-        pedestrians = cd_payload.get("pedestrians")
+        pedestrians = d_payload.get("pedestrians")
         num_pedestrians = len(pedestrians) if isinstance(pedestrians, list) else 0
 
-    if "num_vehicles" in cd_payload:
-        num_vehicles = _to_non_negative_int(cd_payload.get("num_vehicles"), 0)
+    if "num_vehicles" in d_payload:
+        num_vehicles = _to_non_negative_int(d_payload.get("num_vehicles"), 0)
     else:
-        vehicles = cd_payload.get("vehicles")
+        vehicles = d_payload.get("vehicles")
         num_vehicles = len(vehicles) if isinstance(vehicles, list) else 0
 
     perception: Dict[str, Any] = {
         "frame_id": frame_id,
         "scene": b_payload.get("scene", "unknown") or "unknown",
-        "detected_signs": _extract_detected_signs(cd_payload),
+        "detected_signs": _extract_detected_signs(d_payload),
         "num_pedestrians": num_pedestrians,
         "num_vehicles": num_vehicles,
     }
@@ -120,7 +120,7 @@ def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict
     # tracked_pedestrians 兼容处理：
     # 1) dict: 直接透传
     # 2) True: 视为 HIGH + blind spot（临时规则）
-    tracked_val = cd_payload.get("tracked_pedestrians")
+    tracked_val = d_payload.get("tracked_pedestrians")
     if isinstance(tracked_val, dict):
         perception["tracked_pedestrians"] = tracked_val
     elif tracked_val is True:
@@ -133,7 +133,7 @@ def _build_perception(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="模块E：B+CD 对齐后调用 TrafficReminder 进行真实任务处理")
+    parser = argparse.ArgumentParser(description="模块E：B+D 对齐后调用 TrafficReminder 进行真实任务处理")
     parser.add_argument(
         "--endpoints",
         default="tcp://localhost:5052,tcp://localhost:5053",
@@ -228,16 +228,16 @@ def main() -> None:
     print("[moduleE] 按 Ctrl+C 停止")
 
     pending: Dict[int, Dict[str, Any]] = {}
-    latest_payloads: Dict[str, Dict[str, Any]] = {"B": {}, "CD": {}}
+    latest_payloads: Dict[str, Dict[str, Any]] = {"B": {}, "D": {}}
     latest_frame_ids: Dict[str, int] = {}
     dropped_timeout = 0
     mismatch_streak = 0
     effective_mode = "frame_match" if args.fallback_mode in ("auto", "frame_match") else "latest"
     last_stat_log_ts = time.monotonic()
 
-    def emit_result(frame_id: int, b_payload: Dict[str, Any], cd_payload: Dict[str, Any]) -> None:
+    def emit_result(frame_id: int, b_payload: Dict[str, Any], d_payload: Dict[str, Any]) -> None:
         speed = _extract_speed(b_payload, args.default_speed)
-        perception = _build_perception(frame_id, b_payload, cd_payload)
+        perception = _build_perception(frame_id, b_payload, d_payload)
 
         try:
             engine.update_telematics({"speed": speed})
@@ -282,9 +282,9 @@ def main() -> None:
         effective_mode = "latest"
         pending.clear()
         print(f"[moduleE] ⚠️ 检测到严重不匹配，已切换为最新消息模式: {reason}")
-        if latest_payloads["B"] and latest_payloads["CD"]:
-            latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("CD", 0))
-            emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["CD"])
+        if latest_payloads["B"] and latest_payloads["D"]:
+            latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("D", 0))
+            emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["D"])
             print(f"[moduleE] latest模式立即输出一次，frame_id={latest_frame_id}, ts={now:.3f}")
 
     try:
@@ -299,7 +299,7 @@ def main() -> None:
                 frames = socket.recv_multipart()
                 endpoint = socket_to_endpoint[socket]
                 label = source_label(endpoint)
-                if label not in ("B", "CD"):
+                if label not in ("B", "D"):
                     continue
 
                 if len(frames) >= 2:
@@ -322,8 +322,8 @@ def main() -> None:
 
                 latest_payloads[label] = payload
                 latest_frame_ids[label] = frame_id
-                if "B" in latest_frame_ids and "CD" in latest_frame_ids:
-                    if latest_frame_ids["B"] == latest_frame_ids["CD"]:
+                if "B" in latest_frame_ids and "D" in latest_frame_ids:
+                    if latest_frame_ids["B"] == latest_frame_ids["D"]:
                         mismatch_streak = 0
                     else:
                         mismatch_streak += 1
@@ -331,19 +331,19 @@ def main() -> None:
                 maybe_switch_to_latest(now)
 
                 if effective_mode == "latest":
-                    if latest_payloads["B"] and latest_payloads["CD"]:
-                        latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("CD", frame_id))
-                        emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["CD"])
+                    if latest_payloads["B"] and latest_payloads["D"]:
+                        latest_frame_id = latest_frame_ids.get("B", latest_frame_ids.get("D", frame_id))
+                        emit_result(latest_frame_id, latest_payloads["B"], latest_payloads["D"])
                     continue
 
                 if frame_id not in pending:
-                    pending[frame_id] = {"first_ts": now, "B": None, "CD": None}
+                    pending[frame_id] = {"first_ts": now, "B": None, "D": None}
 
                 pending[frame_id][label] = payload
                 entry = pending[frame_id]
 
-                if entry["B"] is not None and entry["CD"] is not None:
-                    emit_result(frame_id, entry["B"], entry["CD"])
+                if entry["B"] is not None and entry["D"] is not None:
+                    emit_result(frame_id, entry["B"], entry["D"])
                     del pending[frame_id]
 
             # 超时未配齐的 frame_id 直接丢弃，保证低延迟

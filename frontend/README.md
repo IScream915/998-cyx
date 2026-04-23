@@ -21,10 +21,10 @@ python3 moduleB/run.py
 - ZeroMQ 发布：`tcp://*:5052`（topic `Frame`）
 - 控制接口：`http://127.0.0.1:5056`
 
-### 2) 启动 moduleC（含控制接口）
+### 2) 启动 moduleD（含控制接口）
 
 ```bash
-python3 moduleC/mock_module_c.py
+python3 moduleD/mock_module_d.py
 ```
 
 默认会启动：
@@ -75,23 +75,23 @@ python3 frontend/ws_bridge.py
 - 禁止 `..`、绝对路径和越界目录
 - 仅允许白名单后缀
 
-### moduleB/moduleC 控制代理 API
+### moduleB/moduleD 控制代理 API
 
 - `GET /api/module-b/state` -> 代理 `GET http://127.0.0.1:5056/state`
 - `POST /api/module-b/mode` -> 代理 `/mode`
 - `POST /api/module-b/scene` -> 代理 `/scene`
 - `POST /api/module-b/player` -> 代理 `/player`
-- `GET /api/module-c/state` -> 代理 `GET http://127.0.0.1:5057/state`
-- `POST /api/module-c/mode` -> 代理 `/mode`
-- `POST /api/module-c/scene` -> 代理 `/scene`
-- `POST /api/module-c/player` -> 代理 `/player`
+- `GET /api/module-d/state` -> 代理 `GET http://127.0.0.1:5057/state`
+- `POST /api/module-d/mode` -> 代理 `/mode`
+- `POST /api/module-d/scene` -> 代理 `/scene`
+- `POST /api/module-d/player` -> 代理 `/player`
 
 可通过参数改代理目标：
 
 ```bash
 python3 frontend/server.py \
   --module_b_control_host 127.0.0.1 --module_b_control_port 5056 \
-  --module_c_control_host 127.0.0.1 --module_c_control_port 5057
+  --module_d_control_host 127.0.0.1 --module_d_control_port 5057
 ```
 
 ---
@@ -109,16 +109,16 @@ python3 frontend/server.py \
 
 ---
 
-## 模块C展示页行为
+## 模块D展示页行为
 
-`模块C展示` 页面已切换为“后端驱动本地图片流”：
+`模块D展示` 页面已切换为“后端驱动本地图片流”：
 
-1. 进入页面后自动调用 `POST /api/module-c/mode {"mode":"local"}`。
+1. 进入页面后自动调用 `POST /api/module-d/mode {"mode":"local"}`。
 2. 场景下拉框会动态读取 `frontend/assets/scenes` 子目录。
-3. 选择场景后调用 `POST /api/module-c/scene`。
-4. 点击播放/暂停/重置分别调用 `POST /api/module-c/player`。
-5. 页面通过 WebSocket `c_frame` 事件实时刷新图片与 `num_traffic_signs/num_pedestrians/num_vehicles`。
-6. `source_mode=local` 时，若 `moduleC.yolo_overlay_base64` 存在，会在右侧“YOLO识别框预留窗口”实时展示识别框叠加图。
+3. 选择场景后调用 `POST /api/module-d/scene`。
+4. 点击播放/暂停/重置分别调用 `POST /api/module-d/player`。
+5. 页面通过 WebSocket `d_frame` 事件实时刷新图片与 `num_traffic_signs/num_pedestrians/num_vehicles`。
+6. `source_mode=local` 时，若 `moduleD.yolo_overlay_base64` 存在，会在右侧“YOLO识别框预留窗口”实时展示识别框叠加图。
 7. 若某帧识别框生成失败，该帧会降级为仅更新统计字段，页面回退占位态但播放不中断。
 
 ---
@@ -132,7 +132,7 @@ python3 frontend/server.py \
 ```
 
 即自动把 moduleB 切回 A-ZMQ 输入模式。
-即自动把 moduleC 切回 A-ZMQ 输入模式。
+即自动把 moduleD 切回 A-ZMQ 输入模式。
 
 ---
 
@@ -141,8 +141,8 @@ python3 frontend/server.py \
 保留：
 
 - `ab_frame`
-- `c_frame`
-  - local 模式可带：`moduleC.scene_folder/image_relpath/frame_index/frame_total/yolo_overlay_base64`
+- `d_frame`
+  - local 模式可带：`moduleD.scene_folder/image_relpath/frame_index/frame_total/yolo_overlay_base64`
 - `e_frame`
 - `status`
 
@@ -157,12 +157,13 @@ python3 frontend/server.py \
 
 ```text
 frontend/
-  server.py                  # 静态服务 + 场景API + moduleB/moduleC 控制代理
-  ws_bridge.py               # A+B+C+E ZMQ -> WebSocket
+  server.py                  # 静态服务 + 场景API + moduleB/moduleD 控制代理
+  ws_bridge.py               # A+B+D+E ZMQ -> WebSocket
   pages/
-    fullflow/page.js         # 全流程页（进入时回切moduleB/moduleC到zmq）
+    fullflow/page.js         # 全流程页（进入时回切moduleB/moduleD到zmq）
     module-b/page.js         # 模块B页（本地模式 + 实时b_frame）
-    module-c/page.js         # 模块C页（本地模式 + 实时c_frame）
+    module-c/page.js         # 模块C占位页（不接入实时控制/消费）
+    module-d/page.js         # 模块D页（本地模式 + 实时d_frame）
   assets/
     scenes/                  # 本地图片流场景目录
 ```

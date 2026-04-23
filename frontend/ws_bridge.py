@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A+B+C+E ZMQ -> WebSocket bridge for frontend/fullflow page."""
+"""A+B+D+E ZMQ -> WebSocket bridge for frontend/fullflow page."""
 
 from __future__ import annotations
 
@@ -35,13 +35,13 @@ class MatchedFrame:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="A+B+C+E 到 WebSocket 的实时桥接服务")
+    parser = argparse.ArgumentParser(description="A+B+D+E 到 WebSocket 的实时桥接服务")
     parser.add_argument("--a-endpoint", default="tcp://192.168.31.157:5050", help="模块A订阅地址")
     parser.add_argument("--a-topic", default="Frame", help="模块A订阅topic")
     parser.add_argument("--b-endpoint", default="tcp://localhost:5052", help="模块B订阅地址")
     parser.add_argument("--b-topic", default="Frame", help="模块B订阅topic")
-    parser.add_argument("--c-endpoint", default="tcp://localhost:5053", help="模块C订阅地址")
-    parser.add_argument("--c-topic", default="Frame", help="模块C订阅topic")
+    parser.add_argument("--d-endpoint", default="tcp://localhost:5053", help="模块D订阅地址")
+    parser.add_argument("--d-topic", default="Frame", help="模块D订阅topic")
     parser.add_argument("--e-endpoint", default="tcp://localhost:5054", help="模块E订阅地址")
     parser.add_argument("--e-topic", default="Frame", help="模块E订阅topic")
     parser.add_argument("--ws-host", default="0.0.0.0", help="WebSocket监听地址")
@@ -62,7 +62,7 @@ class ABWsBridge:
             "dropped_timeout": 0,
             "invalid_a": 0,
             "invalid_b": 0,
-            "invalid_c": 0,
+            "invalid_d": 0,
             "invalid_e": 0,
         }
 
@@ -124,7 +124,7 @@ class ABWsBridge:
             compact["heatmap_base64"] = heatmap_base64
         return compact
 
-    def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
+    def _compact_module_d_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
         compact = {
             "frame_id": frame_id,
             "num_traffic_signs": self._to_non_negative_int(payload.get("num_traffic_signs")),
@@ -281,14 +281,14 @@ class ABWsBridge:
             del self.pending[frame_id]
             await self._emit_matched(matched)
 
-    async def _on_c_message(self, payload: dict[str, Any]) -> None:
+    async def _on_d_message(self, payload: dict[str, Any]) -> None:
         frame_id = self._parse_frame_id(payload.get("frame_id"))
-        compact_payload = self._compact_module_c_payload(payload, frame_id)
+        compact_payload = self._compact_module_d_payload(payload, frame_id)
         await self._broadcast(
             {
-                "event": "c_frame",
+                "event": "d_frame",
                 "frame_id": frame_id,
-                "moduleC": compact_payload,
+                "moduleD": compact_payload,
                 "ts": time.time(),
             }
         )
@@ -319,32 +319,32 @@ class ABWsBridge:
         context = zmq.asyncio.Context()
         socket_a = context.socket(zmq.SUB)
         socket_b = context.socket(zmq.SUB)
-        socket_c = context.socket(zmq.SUB)
+        socket_d = context.socket(zmq.SUB)
         socket_e = context.socket(zmq.SUB)
         try:
             socket_a.setsockopt_string(zmq.SUBSCRIBE, self.args.a_topic)
             socket_b.setsockopt_string(zmq.SUBSCRIBE, self.args.b_topic)
-            socket_c.setsockopt_string(zmq.SUBSCRIBE, self.args.c_topic)
+            socket_d.setsockopt_string(zmq.SUBSCRIBE, self.args.d_topic)
             socket_e.setsockopt_string(zmq.SUBSCRIBE, self.args.e_topic)
             socket_a.connect(self.args.a_endpoint)
             socket_b.connect(self.args.b_endpoint)
-            socket_c.connect(self.args.c_endpoint)
+            socket_d.connect(self.args.d_endpoint)
             socket_e.connect(self.args.e_endpoint)
 
             poller = zmq.asyncio.Poller()
             poller.register(socket_a, zmq.POLLIN)
             poller.register(socket_b, zmq.POLLIN)
-            poller.register(socket_c, zmq.POLLIN)
+            poller.register(socket_d, zmq.POLLIN)
             poller.register(socket_e, zmq.POLLIN)
 
             logging.info(
-                "ZMQ订阅已启动: A=%s[%s], B=%s[%s], C=%s[%s], E=%s[%s]",
+                "ZMQ订阅已启动: A=%s[%s], B=%s[%s], D=%s[%s], E=%s[%s]",
                 self.args.a_endpoint,
                 self.args.a_topic,
                 self.args.b_endpoint,
                 self.args.b_topic,
-                self.args.c_endpoint,
-                self.args.c_topic,
+                self.args.d_endpoint,
+                self.args.d_topic,
                 self.args.e_endpoint,
                 self.args.e_topic,
             )
@@ -371,14 +371,14 @@ class ABWsBridge:
                         self.stats["invalid_b"] += 1
                         logging.warning("B消息解析失败，已丢弃: %s", exc)
 
-                if socket_c in events:
-                    frames = await socket_c.recv_multipart()
+                if socket_d in events:
+                    frames = await socket_d.recv_multipart()
                     try:
-                        _topic, payload = self._parse_json_message(frames, self.args.c_topic)
-                        await self._on_c_message(payload)
+                        _topic, payload = self._parse_json_message(frames, self.args.d_topic)
+                        await self._on_d_message(payload)
                     except Exception as exc:
-                        self.stats["invalid_c"] += 1
-                        logging.warning("C消息解析失败，已丢弃: %s", exc)
+                        self.stats["invalid_d"] += 1
+                        logging.warning("D消息解析失败，已丢弃: %s", exc)
 
                 if socket_e in events:
                     frames = await socket_e.recv_multipart()
@@ -394,7 +394,7 @@ class ABWsBridge:
         finally:
             socket_a.close(linger=0)
             socket_b.close(linger=0)
-            socket_c.close(linger=0)
+            socket_d.close(linger=0)
             socket_e.close(linger=0)
             context.term()
 

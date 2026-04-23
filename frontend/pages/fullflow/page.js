@@ -1,12 +1,6 @@
 const DEFAULT_WS_PORT = 8765;
 const EMPTY_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-function renderModuleCardBody(body, components, metricRows, payload) {
-  components.clearNode(body);
-  body.appendChild(components.createMetricList(metricRows));
-  body.appendChild(components.createJsonBlock(payload));
-}
-
 function renderModuleMetricBody(body, components, metricRows) {
   components.clearNode(body);
   body.appendChild(components.createMetricList(metricRows));
@@ -117,10 +111,10 @@ export function mount(container, { components }) {
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleC 检测结果</h4>
-                <span class="badge mono">C</span>
+                <h4>moduleD 检测结果</h4>
+                <span class="badge mono">D</span>
               </div>
-              <div id="card-module-c" class="module-card-body"></div>
+              <div id="card-module-d" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
@@ -154,7 +148,7 @@ export function mount(container, { components }) {
   const stageSceneBadge = container.querySelector("#stage-scene-badge");
   const cardA = container.querySelector("#card-module-a");
   const cardB = container.querySelector("#card-module-b");
-  const cardC = container.querySelector("#card-module-c");
+  const cardD = container.querySelector("#card-module-d");
   const cardE = container.querySelector("#card-module-e");
   const logList = container.querySelector("#fullflow-log-list");
 
@@ -196,14 +190,14 @@ export function mount(container, { components }) {
     );
   }
 
-  function renderModuleC(moduleCPayload, fallbackFrameId) {
-    const frameId = moduleCPayload?.frame_id ?? fallbackFrameId;
-    const numTrafficSigns = toNumber(moduleCPayload?.num_traffic_signs);
-    const numPedestrians = toNumber(moduleCPayload?.num_pedestrians);
-    const numVehicles = toNumber(moduleCPayload?.num_vehicles);
+  function renderModuleD(moduleDPayload, fallbackFrameId) {
+    const frameId = moduleDPayload?.frame_id ?? fallbackFrameId;
+    const numTrafficSigns = toNumber(moduleDPayload?.num_traffic_signs);
+    const numPedestrians = toNumber(moduleDPayload?.num_pedestrians);
+    const numVehicles = toNumber(moduleDPayload?.num_vehicles);
 
     renderModuleMetricBody(
-      cardC,
+      cardD,
       components,
       [
         { label: "frame_id", value: String(frameId ?? "-") },
@@ -270,17 +264,17 @@ export function mount(container, { components }) {
     pushLog(`接收配对帧 frame_id=${Math.trunc(frameId)}，已更新场景图与moduleB面板`);
   }
 
-  function renderCFrame(payload) {
+  function renderDFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到c_frame但frame_id非法，已忽略");
+      pushLog("收到d_frame但frame_id非法，已忽略");
       return;
     }
 
-    const moduleCPayload =
-      payload?.moduleC && typeof payload.moduleC === "object" ? payload.moduleC : {};
-    renderModuleC(moduleCPayload, Math.trunc(frameId));
-    pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
+    const moduleDPayload =
+      payload?.moduleD && typeof payload.moduleD === "object" ? payload.moduleD : {};
+    renderModuleD(moduleDPayload, Math.trunc(frameId));
+    pushLog(`接收模块D输出 frame_id=${Math.trunc(frameId)}，已更新moduleD面板`);
   }
 
   function renderEFrame(payload) {
@@ -354,8 +348,8 @@ export function mount(container, { components }) {
         renderFrame(payload);
         return;
       }
-      if (evt === "c_frame") {
-        renderCFrame(payload);
+      if (evt === "d_frame") {
+        renderDFrame(payload);
         return;
       }
       if (evt === "e_frame") {
@@ -407,9 +401,9 @@ export function mount(container, { components }) {
     }
   }
 
-  async function switchModuleCToZmqMode() {
+  async function switchModuleDToZmqMode() {
     try {
-      const response = await fetch("/api/module-c/mode", {
+      const response = await fetch("/api/module-d/mode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "zmq" }),
@@ -421,19 +415,19 @@ export function mount(container, { components }) {
       if (payload?.ok === false) {
         throw new Error(payload?.error || "切换失败");
       }
-      pushLog("已将 moduleC 切换到 ZMQ 输入模式");
+      pushLog("已将 moduleD 切换到 ZMQ 输入模式");
     } catch (error) {
-      console.warn("[fullflow] 切换 moduleC 到 ZMQ 模式失败:", error);
-      pushLog(`moduleC模式回切失败: ${error?.message ?? "unknown error"}`);
+      console.warn("[fullflow] 切换 moduleD 到 ZMQ 模式失败:", error);
+      pushLog(`moduleD模式回切失败: ${error?.message ?? "unknown error"}`);
     }
   }
 
   renderStaticCards();
   renderModuleB({}, null);
-  renderModuleC({}, null);
+  renderModuleD({}, null);
   renderModuleE({}, null);
   switchModuleBToZmqMode();
-  switchModuleCToZmqMode();
+  switchModuleDToZmqMode();
   connectWebSocket();
 
   return () => {

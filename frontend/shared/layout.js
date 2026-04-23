@@ -16,16 +16,16 @@ export const NAV_ITEMS = [
   {
     key: "module-c",
     label: "模块C展示",
-    desc: "本地序列与检测统计",
+    desc: "决策模块预留页面",
     title: "模块C展示",
-    subtitle: "",
+    subtitle: "当前为占位页，等待接入模块C能力",
   },
   {
     key: "module-d",
     label: "模块D展示",
-    desc: "决策模块预留页面",
+    desc: "本地序列与检测统计",
     title: "模块D展示",
-    subtitle: "当前为占位页，等待接入模块D能力",
+    subtitle: "",
   },
   {
     key: "module-e",
