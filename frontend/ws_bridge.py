@@ -104,6 +104,21 @@ class ABWsBridge:
             "confidence": confidence,
             "speed": self._to_float(payload.get("speed")),
         }
+        source_mode = payload.get("source_mode")
+        if isinstance(source_mode, str):
+            compact["source_mode"] = source_mode
+        scene_folder = payload.get("scene_folder")
+        if isinstance(scene_folder, str):
+            compact["scene_folder"] = scene_folder
+        image_relpath = payload.get("image_relpath")
+        if isinstance(image_relpath, str):
+            compact["image_relpath"] = image_relpath
+        frame_index = self._to_non_negative_int(payload.get("frame_index"))
+        if frame_index is not None:
+            compact["frame_index"] = frame_index
+        frame_total = self._to_non_negative_int(payload.get("frame_total"))
+        if frame_total is not None:
+            compact["frame_total"] = frame_total
         return compact
 
     def _compact_module_c_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:
@@ -222,6 +237,14 @@ class ABWsBridge:
     async def _on_b_message(self, payload: dict[str, Any], now: float) -> None:
         frame_id = self._parse_frame_id(payload.get("frame_id"))
         compact_payload = self._compact_module_b_payload(payload, frame_id)
+        await self._broadcast(
+            {
+                "event": "b_frame",
+                "frame_id": frame_id,
+                "moduleB": compact_payload,
+                "ts": time.time(),
+            }
+        )
 
         entry = self.pending.setdefault(frame_id, {"first_ts": now, "a": None, "b": None})
         entry["b"] = {"frame_id": frame_id, "payload": compact_payload}

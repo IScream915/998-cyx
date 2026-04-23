@@ -1,23 +1,34 @@
 # 前端说明（frontend）
 
-本目录是智能驾驶辅助系统的前端演示工程，采用原生 `HTML/CSS/JS` 实现。
+本目录是智能驾驶辅助系统前端演示工程，采用原生 `HTML/CSS/JS`。
 
 ## 启动方式
 
-### 0) 安装实时桥接依赖（首次）
+### 0) 安装依赖（首次）
 
 ```bash
 pip install pyzmq websockets
 ```
 
-### 1) 推荐方式（无需手动指定目录路径）
-在项目根目录执行：
+### 1) 启动 moduleB（含控制接口）
+
+```bash
+python3 moduleB/run.py
+```
+
+默认会启动：
+
+- ZeroMQ 发布：`tcp://*:5052`（topic `Frame`）
+- 控制接口：`http://127.0.0.1:5056`
+
+### 2) 启动前端静态服务（含 API 代理）
 
 ```bash
 python3 frontend/server.py
 ```
 
 默认监听：
+
 - Host: `0.0.0.0`
 - Port: `4173`
 
@@ -27,114 +38,95 @@ python3 frontend/server.py
 http://127.0.0.1:4173
 ```
 
-注意：`0.0.0.0` 是服务绑定地址，不是浏览器访问地址。  
-当服务监听 `0.0.0.0` 时，请使用 `127.0.0.1` 或 `localhost` 访问。
-
-### 2) 自定义端口/地址
-
-```bash
-python3 frontend/server.py --host 0.0.0.0 --port 8080
-```
-
-说明：`server.py` 会自动定位自身所在目录并作为静态资源根目录，所以无论在本地还是部署到服务器，只要目录结构保持 `frontend/` 不变，都不需要手动写绝对路径。
-
-### 3) 全流程页实时联动（A+B+C+E）
-
-`全流程展示` 页面已改为实时模式，需要同时启动静态服务与桥接服务：
-
-终端1（静态页面）：
-
-```bash
-python3 frontend/server.py --host 0.0.0.0 --port 4173
-```
-
-终端2（A+B+C+E -> WebSocket 桥接）：
+### 3) 启动桥接服务（全流程页实时）
 
 ```bash
 python3 frontend/ws_bridge.py
 ```
 
-桥接默认参数：
+默认监听：`ws://0.0.0.0:8765`。
 
-- A endpoint: `tcp://192.168.31.157:5050`
-- A topic: `Frame`
-- B endpoint: `tcp://localhost:5052`
-- B topic: `Frame`
-- C endpoint: `tcp://localhost:5053`
-- C topic: `Frame`
-- E endpoint: `tcp://localhost:5054`
-- E topic: `Frame`
-- WS: `ws://0.0.0.0:8765`
+---
 
-前端会自动连接 `ws://<页面host>:8765`。
+## frontend/server.py 新增 API
 
-可选参数示例：
+`server.py` 现在除了静态资源，还提供以下同源 API。
+
+### 场景目录 API
+
+- `GET /api/scenes`
+  - 返回 `frontend/assets/scenes` 下一级目录与帧数
+- `GET /api/scenes/{scene}/frames`
+  - 返回该目录图片列表（仅 `.jpg/.jpeg/.png`）
+
+安全限制：
+
+- 禁止 `..`、绝对路径和越界目录
+- 仅允许白名单后缀
+
+### moduleB 控制代理 API
+
+- `GET /api/module-b/state` -> 代理 `GET http://127.0.0.1:5056/state`
+- `POST /api/module-b/mode` -> 代理 `/mode`
+- `POST /api/module-b/scene` -> 代理 `/scene`
+- `POST /api/module-b/player` -> 代理 `/player`
+
+可通过参数改代理目标：
 
 ```bash
-python3 frontend/ws_bridge.py \
-  --a-endpoint tcp://192.168.31.157:5050 \
-  --a-topic Frame \
-  --b-endpoint tcp://localhost:5052 \
-  --b-topic Frame \
-  --c-endpoint tcp://localhost:5053 \
-  --c-topic Frame \
-  --e-endpoint tcp://localhost:5054 \
-  --e-topic Frame \
-  --ws-host 0.0.0.0 \
-  --ws-port 8765 \
-  --match-timeout-ms 1500
+python3 frontend/server.py --module_b_control_host 127.0.0.1 --module_b_control_port 5056
 ```
 
-## 目录结构
+---
+
+## 模块B展示页行为
+
+`模块B展示` 页面已切换为“后端驱动本地图片流”：
+
+1. 进入页面后自动调用 `POST /api/module-b/mode {"mode":"local"}`。
+2. 场景下拉框会动态读取 `frontend/assets/scenes` 子目录。
+3. 选择场景后调用 `POST /api/module-b/scene`。
+4. 点击播放/暂停/重置分别调用 `POST /api/module-b/player`。
+5. 页面通过 WebSocket `b_frame` 事件实时刷新图片与 `scene/confidence/speed`。
+
+---
+
+## 全流程页行为
+
+`全流程展示` 页面 mount 时会调用：
+
+```json
+{"mode": "zmq"}
+```
+
+即自动把 moduleB 切回 A-ZMQ 输入模式。
+
+---
+
+## ws_bridge.py 事件
+
+保留：
+
+- `ab_frame`
+- `c_frame`
+- `e_frame`
+- `status`
+
+新增：
+
+- `b_frame`（每条 moduleB 消息都推送，不依赖 A/B 配对）
+
+---
+
+## 目录结构（关键）
 
 ```text
 frontend/
-  index.html                 # 单入口页面壳
-  app.css                    # 全局布局与通用样式
-  app.js                     # 路由与页面挂载调度
-  server.py                  # 静态服务启动脚本（免手动目录）
-  ws_bridge.py               # A+B+C+E ZMQ 到 WebSocket 的实时桥接
-  README.md                  # 本说明文档
-  shared/
-    theme.css                # 主题变量（黑白灰科技风）
-    layout.js                # 侧边栏/顶部栏/页面头部逻辑
-    components.js            # 通用 UI 小组件与工具函数
+  server.py                  # 静态服务 + 场景API + moduleB控制代理
+  ws_bridge.py               # A+B+C+E ZMQ -> WebSocket
   pages/
-    fullflow/
-      data.js                # 全流程 mock 场景与模块输出数据
-      page.css               # 全流程页面样式
-      page.js                # 全流程页面逻辑（WebSocket实时渲染、日志）
-    module-b/
-      data.js                # 模块B mock 数据
-      page.css               # 模块B页面样式
-      page.js                # 模块B页面逻辑（双窗、播放、输出）
-    module-c/
-      page.css               # 模块C占位页样式
-      page.js                # 模块C占位页逻辑
-    module-d/
-      page.css               # 模块D占位页样式
-      page.js                # 模块D占位页逻辑
-    module-e/
-      page.css               # 模块E占位页样式
-      page.js                # 模块E占位页逻辑
+    fullflow/page.js         # 全流程页（进入时回切moduleB到zmq）
+    module-b/page.js         # 模块B页（本地模式 + 实时b_frame）
   assets/
-    scenes/
-      scene-1/              # 场景1帧序列
-      scene-2/              # 场景2帧序列
-      scene-3/              # 场景3帧序列
-```
-
-## 当前页面说明
-
-- `全流程展示`：实时接收 A+B 配对帧更新主画面与 `moduleB`，并实时接收 `moduleC`、`moduleE` 输出更新对应面板。
-- `模块B展示`：左右双窗（左侧原始场景，右侧热力图占位），并展示 B 模块输出。
-- `模块C/D/E展示`：当前为占位页，预留后续独立展示能力。
-
-## 部署建议
-
-- 生产环境可将 `frontend/` 目录交给 Nginx/Caddy 等静态服务器托管。
-- 若临时演示，可直接使用：
-
-```bash
-python3 frontend/server.py --host 0.0.0.0 --port 4173
+    scenes/                  # 本地图片流场景目录
 ```

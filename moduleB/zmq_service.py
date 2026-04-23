@@ -3,11 +3,16 @@ import json
 import logging
 import math
 import os
+import re
 import signal
 import sys
+import threading
 import time
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 # 兼容 macOS 下 OpenMP 重复加载导致的进程中止问题
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -19,11 +24,19 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import torch
 import zmq
+from PIL import Image
+
 from imageProcess.codec import decode_base64_to_pil_image
 from moduleB.inference import load_model, predict, preprocess_pil_image
 
 MODULE_B_DIR = Path(__file__).resolve().parent
 DEFAULT_CHECKPOINT = str((MODULE_B_DIR / "outputs" / "best_model.pth").resolve())
+DEFAULT_LOCAL_SCENES_ROOT = str((PROJECT_ROOT / "frontend" / "assets" / "scenes").resolve())
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+
+def _natural_sort_key(text: str) -> list[Any]:
+    return [int(token) if token.isdigit() else token.lower() for token in re.split(r"(\d+)", text)]
 
 
 def _parse_frame_id(value: Any, field_path: str) -> int:
@@ -99,104 +112,311 @@ def _extract_speed_kmh(payload: dict[str, Any]) -> int:
     return int(round(speed_mps * 3.6))
 
 
-class ZMQJsonSubscriber:
-    """持续订阅 ZeroMQ 消息并解析 JSON。"""
+def _decode_frame(frame: bytes) -> str:
+    return frame.decode("utf-8", errors="replace").strip()
 
-    def __init__(
-        self,
-        endpoint: str,
-        topic: str = "Frame",
-        recv_timeout_ms: int = 1000,
-        reconnect_delay_sec: float = 1.0,
-    ) -> None:
-        self.endpoint = endpoint
-        self.topic = topic
-        self.recv_timeout_ms = recv_timeout_ms
-        self.reconnect_delay_sec = reconnect_delay_sec
 
-        self._context: Optional[zmq.Context] = None
-        self._socket: Optional[zmq.Socket] = None
-        self._running = False
+def _parse_json_message(frames: list[bytes], subscribed_topic: str) -> tuple[Optional[str], dict[str, Any]]:
+    if not frames:
+        raise ValueError("空消息帧")
 
-    def _setup_socket(self) -> None:
-        if self._socket is not None:
-            self._socket.close(linger=0)
+    topic: Optional[str] = None
+    payload_text: str
 
-        if self._context is None:
-            self._context = zmq.Context()
+    if len(frames) == 1:
+        payload_text = _decode_frame(frames[0])
+        if subscribed_topic and payload_text.startswith(subscribed_topic + " "):
+            payload_text = payload_text[len(subscribed_topic) + 1 :]
+            topic = subscribed_topic
+    else:
+        topic = _decode_frame(frames[0])
+        payload_text = _decode_frame(frames[-1])
 
-        socket = self._context.socket(zmq.SUB)
-        socket.setsockopt(zmq.RCVTIMEO, self.recv_timeout_ms)
-        socket.setsockopt_string(zmq.SUBSCRIBE, self.topic)
-        socket.connect(self.endpoint)
+    payload = json.loads(payload_text)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON 顶层必须为对象")
 
-        self._socket = socket
-        logging.info("已连接到 %s, topic=%r", self.endpoint, self.topic)
+    return topic, payload
 
-    @staticmethod
-    def _decode_frame(frame: bytes) -> str:
-        return frame.decode("utf-8", errors="replace").strip()
 
-    def _parse_json_message(self, frames: list[bytes]) -> tuple[Optional[str], dict[str, Any]]:
-        topic: Optional[str] = None
-        payload_text: str
+def _resolve_scene_dir(scenes_root: Path, scene_folder: str) -> Path:
+    if not isinstance(scene_folder, str) or not scene_folder.strip():
+        raise ValueError("scene 不能为空")
+    clean = scene_folder.strip()
+    if "/" in clean or "\\" in clean or clean in (".", ".."):
+        raise ValueError("scene 非法")
 
-        if len(frames) == 1:
-            payload_text = self._decode_frame(frames[0])
+    root = scenes_root.resolve()
+    scene_dir = (root / clean).resolve()
+    if scene_dir.parent != root:
+        raise ValueError("scene 越界")
+    if not scene_dir.is_dir():
+        raise FileNotFoundError(f"场景目录不存在: {clean}")
+    return scene_dir
 
-            # 兼容 "topic {json}" 单帧格式
-            if self.topic and payload_text.startswith(self.topic + " "):
-                payload_text = payload_text[len(self.topic) + 1 :]
-                topic = self.topic
-        else:
-            topic = self._decode_frame(frames[0])
-            payload_text = self._decode_frame(frames[-1])
 
-        payload = json.loads(payload_text)
-        if not isinstance(payload, dict):
-            raise ValueError("JSON 顶层必须为对象")
+def _collect_scene_images(scene_dir: Path) -> list[Path]:
+    images = [
+        item
+        for item in scene_dir.iterdir()
+        if item.is_file() and item.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+    ]
+    images.sort(key=lambda p: _natural_sort_key(p.name))
+    return images
 
-        return topic, payload
 
-    def stop(self) -> None:
-        self._running = False
+def _to_public_relpath(path: Path, scenes_root: Path, scene_folder: str) -> str:
+    # 默认目录下输出 assets/scenes/<scene>/<file>，便于前端直接作为静态资源路径使用。
+    root = scenes_root.resolve()
+    try:
+        rel_to_scenes = path.resolve().relative_to(root)
+        return f"assets/scenes/{rel_to_scenes.as_posix()}"
+    except Exception:
+        return f"assets/scenes/{scene_folder}/{path.name}"
 
-    def close(self) -> None:
-        if self._socket is not None:
-            self._socket.close(linger=0)
-            self._socket = None
 
-        if self._context is not None:
-            self._context.term()
-            self._context = None
+class ModuleBRuntimeState:
+    def __init__(self, scenes_root: Path) -> None:
+        self._lock = threading.Lock()
+        self._scenes_root = scenes_root
 
-    def run_forever(self, on_message: Callable[[dict[str, Any], Optional[str]], None]) -> None:
-        self._running = True
+        self._mode = "zmq"
+        self._scene_folder: Optional[str] = None
+        self._frame_paths: list[Path] = []
+        self._frame_relpaths: list[str] = []
+        self._frame_index = 0
+        self._playing = False
+        self._next_local_frame_id = 1
+        self._force_emit_current = False
+        self._next_emit_monotonic = 0.0
+        self._last_error = ""
 
-        while self._running:
+    def _snapshot_unlocked(self) -> dict[str, Any]:
+        return {
+            "mode": self._mode,
+            "scene_folder": self._scene_folder,
+            "frame_index": self._frame_index,
+            "frame_total": len(self._frame_paths),
+            "playing": self._playing,
+            "next_local_frame_id": self._next_local_frame_id,
+            "last_error": self._last_error,
+        }
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return self._snapshot_unlocked()
+
+    def get_mode(self) -> str:
+        with self._lock:
+            return self._mode
+
+    def set_error(self, message: str) -> None:
+        with self._lock:
+            self._last_error = message
+
+    def clear_error(self) -> None:
+        with self._lock:
+            self._last_error = ""
+
+    def set_mode(self, mode: str) -> dict[str, Any]:
+        if mode not in ("zmq", "local"):
+            raise ValueError("mode 仅支持 zmq/local")
+
+        with self._lock:
+            self._mode = mode
+            if mode == "zmq":
+                self._playing = False
+                self._force_emit_current = False
+            else:
+                self._playing = False
+                if self._frame_paths:
+                    self._force_emit_current = True
+            return self._snapshot_unlocked()
+
+    def set_scene(self, scene_folder: str) -> dict[str, Any]:
+        scene_dir = _resolve_scene_dir(self._scenes_root, scene_folder)
+        frame_paths = _collect_scene_images(scene_dir)
+        if not frame_paths:
+            raise ValueError(f"场景目录下没有可播放图片: {scene_folder}")
+
+        frame_relpaths = [_to_public_relpath(path, self._scenes_root, scene_folder) for path in frame_paths]
+
+        with self._lock:
+            self._scene_folder = scene_folder
+            self._frame_paths = frame_paths
+            self._frame_relpaths = frame_relpaths
+            self._frame_index = 0
+            self._playing = False
+            self._next_local_frame_id = 1
+            self._force_emit_current = True
+            self._next_emit_monotonic = 0.0
+            self._last_error = ""
+            return self._snapshot_unlocked()
+
+    def player_action(self, action: str) -> dict[str, Any]:
+        if action not in ("play", "pause", "reset"):
+            raise ValueError("action 仅支持 play/pause/reset")
+
+        with self._lock:
+            if action == "play":
+                if not self._frame_paths:
+                    raise ValueError("当前未选择场景或场景无图片")
+                if self._frame_index >= len(self._frame_paths) - 1:
+                    self._frame_index = 0
+                    self._next_local_frame_id = 1
+                elif self._frame_index == 0 and self._next_local_frame_id > 1 and len(self._frame_paths) > 1:
+                    # 首帧已预览过时，播放从下一帧开始，避免重复展示首帧。
+                    self._frame_index = 1
+                self._playing = True
+                self._force_emit_current = False
+                self._next_emit_monotonic = 0.0
+            elif action == "pause":
+                self._playing = False
+            else:  # reset
+                self._frame_index = 0
+                self._next_local_frame_id = 1
+                self._playing = False
+                if self._frame_paths:
+                    self._force_emit_current = True
+                self._next_emit_monotonic = 0.0
+
+            return self._snapshot_unlocked()
+
+    def acquire_local_emit(self, now_monotonic: float, interval_sec: float) -> Optional[dict[str, Any]]:
+        with self._lock:
+            if self._mode != "local":
+                return None
+            if not self._frame_paths:
+                return None
+
+            should_emit = False
+            advance_after_emit = False
+
+            if self._force_emit_current:
+                self._force_emit_current = False
+                should_emit = True
+                if self._playing:
+                    self._next_emit_monotonic = now_monotonic + interval_sec
+            elif self._playing and now_monotonic >= self._next_emit_monotonic:
+                should_emit = True
+                advance_after_emit = True
+                self._next_emit_monotonic = now_monotonic + interval_sec
+
+            if not should_emit:
+                return None
+
+            emit_index = self._frame_index
+            emit_path = self._frame_paths[emit_index]
+            emit_relpath = self._frame_relpaths[emit_index]
+            emit_total = len(self._frame_paths)
+            emit_frame_id = self._next_local_frame_id
+            self._next_local_frame_id += 1
+
+            if advance_after_emit:
+                if self._frame_index < emit_total - 1:
+                    self._frame_index += 1
+                else:
+                    self._playing = False
+
+            return {
+                "frame_id": emit_frame_id,
+                "scene_folder": self._scene_folder,
+                "image_path": emit_path,
+                "image_relpath": emit_relpath,
+                "frame_index": emit_index,
+                "frame_total": emit_total,
+                "playing": self._playing,
+            }
+
+
+def _create_control_handler(runtime_state: ModuleBRuntimeState):
+    class ModuleBControlHandler(BaseHTTPRequestHandler):
+        server_version = "ModuleBControl/1.0"
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, format: str, *args: Any) -> None:
+            logging.info("[control] " + format, *args)
+
+        def _send_json(self, status: int, payload: dict[str, Any]) -> None:
+            raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def _read_json_body(self) -> dict[str, Any]:
+            raw_len = self.headers.get("Content-Length", "0")
             try:
-                if self._socket is None:
-                    self._setup_socket()
+                body_len = int(raw_len)
+            except ValueError as exc:
+                raise ValueError("Content-Length 非法") from exc
 
-                assert self._socket is not None
-                frames = self._socket.recv_multipart()
+            if body_len <= 0:
+                return {}
 
-                topic, payload = self._parse_json_message(frames)
-                on_message(payload, topic)
+            raw = self.rfile.read(body_len)
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except Exception as exc:
+                raise ValueError("请求体不是合法JSON") from exc
 
-            except zmq.Again:
-                # 超时用于让循环有机会响应 stop/信号
-                continue
-            except (json.JSONDecodeError, ValueError) as exc:
-                logging.warning("收到非法 JSON 消息，已跳过: %s", exc)
-            except zmq.ZMQError as exc:
-                logging.error("ZMQ 异常，准备重连: %s", exc)
-                time.sleep(self.reconnect_delay_sec)
-                self._setup_socket()
-            except Exception as exc:  # 防止业务回调异常导致服务退出
-                logging.exception("消息处理异常，继续运行: %s", exc)
+            if not isinstance(payload, dict):
+                raise ValueError("请求体JSON顶层必须是对象")
+            return payload
 
-        self.close()
+        def do_GET(self) -> None:
+            path = urlparse(self.path).path
+            if path == "/state":
+                self._send_json(HTTPStatus.OK, {"ok": True, "state": runtime_state.snapshot()})
+                return
+
+            self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
+
+        def do_POST(self) -> None:
+            path = urlparse(self.path).path
+
+            try:
+                payload = self._read_json_body()
+            except ValueError as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+
+            try:
+                if path == "/mode":
+                    mode = payload.get("mode")
+                    if not isinstance(mode, str):
+                        raise ValueError("mode 必须是字符串")
+                    state = runtime_state.set_mode(mode)
+                    self._send_json(HTTPStatus.OK, {"ok": True, "state": state})
+                    return
+
+                if path == "/scene":
+                    scene = payload.get("scene")
+                    if not isinstance(scene, str):
+                        raise ValueError("scene 必须是字符串")
+                    state = runtime_state.set_scene(scene)
+                    self._send_json(HTTPStatus.OK, {"ok": True, "state": state})
+                    return
+
+                if path == "/player":
+                    action = payload.get("action", payload.get("command"))
+                    if not isinstance(action, str):
+                        raise ValueError("action 必须是字符串")
+                    state = runtime_state.player_action(action)
+                    self._send_json(HTTPStatus.OK, {"ok": True, "state": state})
+                    return
+
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
+            except FileNotFoundError as exc:
+                self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": str(exc)})
+            except ValueError as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            except Exception as exc:
+                logging.exception("控制接口处理失败: %s", exc)
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "服务内部错误"})
+
+    return ModuleBControlHandler
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -224,6 +444,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_classes", type=int, default=7, help="类别数量")
     parser.add_argument("--img_size", type=int, default=224, help="输入图像大小")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"], help="推理设备")
+
+    parser.add_argument(
+        "--local_scenes_root",
+        type=str,
+        default=DEFAULT_LOCAL_SCENES_ROOT,
+        help="本地场景根目录，默认 frontend/assets/scenes",
+    )
+    parser.add_argument("--local_rate_hz", type=float, default=2.0, help="本地模式播放速率(Hz)")
+    parser.add_argument("--local_speed_kmh", type=float, default=0.0, help="本地模式输出速度(km/h)")
+
+    parser.add_argument("--control_host", default="127.0.0.1", help="控制接口监听地址")
+    parser.add_argument("--control_port", type=int, default=5056, help="控制接口监听端口")
     return parser
 
 
@@ -233,11 +465,17 @@ def main() -> None:
 
     if args.publish_rate_hz < 0:
         parser.error("--publish_rate_hz 不能为负数")
+    if args.local_rate_hz <= 0:
+        parser.error("--local_rate_hz 必须大于0")
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
+
+    scenes_root = Path(args.local_scenes_root).resolve()
+    if not scenes_root.is_dir():
+        parser.error(f"--local_scenes_root 目录不存在: {scenes_root}")
 
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -256,16 +494,31 @@ def main() -> None:
     if model is None:
         raise RuntimeError("模型加载失败，请检查检查点文件")
 
-    subscriber = ZMQJsonSubscriber(
-        endpoint=args.endpoint,
-        topic=args.topic,
-        recv_timeout_ms=args.timeout_ms,
-        reconnect_delay_sec=args.reconnect_delay,
-    )
+    runtime_state = ModuleBRuntimeState(scenes_root=scenes_root)
+
+    control_handler = _create_control_handler(runtime_state)
+    control_server = ThreadingHTTPServer((args.control_host, args.control_port), control_handler)
+    control_thread = threading.Thread(target=control_server.serve_forever, daemon=True)
+    control_thread.start()
+    logging.info("控制接口已启动: http://%s:%d", args.control_host, args.control_port)
+
+    subscribe_context = zmq.Context()
+
+    def create_subscriber() -> zmq.Socket:
+        subscriber = subscribe_context.socket(zmq.SUB)
+        subscriber.setsockopt(zmq.RCVTIMEO, args.timeout_ms)
+        subscriber.setsockopt_string(zmq.SUBSCRIBE, args.topic)
+        subscriber.connect(args.endpoint)
+        logging.info("已连接到 %s, topic=%r", args.endpoint, args.topic)
+        return subscriber
+
+    subscriber = create_subscriber()
+
     publish_context = zmq.Context()
     publisher = publish_context.socket(zmq.PUB)
     publisher.bind(args.publish_bind)
     logging.info("已启动发布端: %s, topic=%r", args.publish_bind, args.publish_topic)
+
     min_publish_interval = 1.0 / args.publish_rate_hz if args.publish_rate_hz > 0 else 0.0
     if min_publish_interval > 0:
         logging.info(
@@ -273,29 +526,50 @@ def main() -> None:
             args.publish_rate_hz,
             min_publish_interval,
         )
+
+    running = True
     last_publish_at: Optional[float] = None
+    local_emit_interval = 1.0 / args.local_rate_hz
 
     def handle_signal(signum: int, _frame: Any) -> None:
-        logging.info("收到信号 %s，正在停止订阅服务", signum)
-        subscriber.stop()
+        nonlocal running
+        logging.info("收到信号 %s，准备停止 moduleB 服务", signum)
+        running = False
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    def process_message(payload: dict[str, Any], _topic: Optional[str]) -> None:
+    def publish_result(
+        frame_id: int,
+        image: Image.Image,
+        speed: float,
+        *,
+        source_mode: str,
+        scene_folder: Optional[str] = None,
+        image_relpath: Optional[str] = None,
+        frame_index: Optional[int] = None,
+        frame_total: Optional[int] = None,
+    ) -> None:
         nonlocal last_publish_at
-        frame_id, image_b64 = _extract_frame_and_image(payload)
-        speed = _extract_speed_kmh(payload)
-        image = decode_base64_to_pil_image(image_b64)
+
         image_tensor, _ = preprocess_pil_image(image, args.img_size)
         scene, confidence, _ = predict(model, image_tensor, device, class_names)
 
-        result = {
+        result: dict[str, Any] = {
             "frame_id": frame_id,
             "scene": scene,
             "conference": confidence,
+            "confidence": confidence,
             "speed": speed,
+            "source_mode": source_mode,
         }
+
+        if source_mode == "local":
+            result["scene_folder"] = scene_folder
+            result["image_relpath"] = image_relpath
+            result["frame_index"] = frame_index
+            result["frame_total"] = frame_total
+
         result_json = json.dumps(result, ensure_ascii=False)
 
         if min_publish_interval > 0 and last_publish_at is not None:
@@ -310,10 +584,86 @@ def main() -> None:
         sys.stdout.flush()
 
     try:
-        subscriber.run_forever(on_message=process_message)
+        while running:
+            mode = runtime_state.get_mode()
+
+            if mode == "zmq":
+                try:
+                    frames = subscriber.recv_multipart()
+                    _topic, payload = _parse_json_message(frames, args.topic)
+                    frame_id, image_b64 = _extract_frame_and_image(payload)
+                    speed = _extract_speed_kmh(payload)
+                    image = decode_base64_to_pil_image(image_b64)
+                    publish_result(frame_id, image, speed, source_mode="zmq")
+                    runtime_state.clear_error()
+                except zmq.Again:
+                    continue
+                except (json.JSONDecodeError, ValueError) as exc:
+                    runtime_state.set_error(str(exc))
+                    logging.warning("收到非法 ZMQ 消息，已跳过: %s", exc)
+                except zmq.ZMQError as exc:
+                    runtime_state.set_error(f"ZMQ异常: {exc}")
+                    logging.error("ZMQ 异常，准备重连: %s", exc)
+                    try:
+                        subscriber.close(linger=0)
+                    except Exception:
+                        pass
+                    time.sleep(args.reconnect_delay)
+                    subscriber = create_subscriber()
+                except Exception as exc:
+                    runtime_state.set_error(str(exc))
+                    logging.exception("ZMQ 模式处理异常: %s", exc)
+                continue
+
+            local_task = runtime_state.acquire_local_emit(time.monotonic(), local_emit_interval)
+            if local_task is None:
+                time.sleep(0.01)
+                continue
+
+            try:
+                image = Image.open(local_task["image_path"]).convert("RGB")
+                publish_result(
+                    frame_id=int(local_task["frame_id"]),
+                    image=image,
+                    speed=float(args.local_speed_kmh),
+                    source_mode="local",
+                    scene_folder=local_task.get("scene_folder"),
+                    image_relpath=local_task.get("image_relpath"),
+                    frame_index=local_task.get("frame_index"),
+                    frame_total=local_task.get("frame_total"),
+                )
+                runtime_state.clear_error()
+            except Exception as exc:
+                runtime_state.set_error(str(exc))
+                logging.exception("本地模式处理异常: %s", exc)
+                time.sleep(0.05)
     finally:
-        publisher.close(linger=0)
-        publish_context.term()
+        try:
+            control_server.shutdown()
+        except Exception:
+            pass
+        try:
+            control_server.server_close()
+        except Exception:
+            pass
+
+        try:
+            subscriber.close(linger=0)
+        except Exception:
+            pass
+        try:
+            subscribe_context.term()
+        except Exception:
+            pass
+
+        try:
+            publisher.close(linger=0)
+        except Exception:
+            pass
+        try:
+            publish_context.term()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
