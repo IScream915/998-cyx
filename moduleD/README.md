@@ -34,6 +34,7 @@ python3 moduleD/mock_module_d.py
 - `traffic_signs` / `num_traffic_signs`
 - `pedestrians` / `num_pedestrians`
 - `vehicles` / `num_vehicles`
+- `traffic_lights`（`light_color` + `confidence`）
 
 新增：
 
@@ -58,6 +59,11 @@ python3 moduleD/mock_module_d.py
 - `--sign-model` / `--scene-model` / `--conf` / `--iou` / `--img-size` / `--device`
 - `--disable-ocr` / `--ocr-min-conf`
 - `--save-vis` / `--vis-dir`
+
+## 权重说明
+
+- 默认加载顺序不变（优先 `best.pt` / `yolov8n.pt`）。
+- `coreDetector/weights` 额外提供可选权重：`tsr_best.pt`、`carla_car_best.pt`（仅新增，不替换默认）。
 
 ## OCR 启动检查
 

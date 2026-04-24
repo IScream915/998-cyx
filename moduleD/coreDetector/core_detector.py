@@ -5,6 +5,7 @@ import base64
 import binascii
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
+import cv2
 import json
 import logging
 import numpy as np
@@ -144,7 +145,7 @@ VEHICLE_CLASS_MAP = {
     7: "truck",
 }
 
-SCENE_CLASSES = [0, 1, 2, 3, 5, 7]
+SCENE_CLASSES = [0, 1, 2, 3, 5, 7, 9]
 VEHICLE_VIS_COLORS = {
     "bicycle": (0, 210, 210),
     "car": (0, 165, 255),
@@ -152,6 +153,8 @@ VEHICLE_VIS_COLORS = {
     "bus": (180, 50, 255),
     "truck": (60, 80, 255),
 }
+
+TRAFFIC_LIGHT_COLORS = {"red", "yellow", "green", "unknown"}
 
 
 def _default_num_threads() -> int:
@@ -165,6 +168,7 @@ class CoreDetector:
     1) traffic signs
     2) pedestrians
     3) vehicles
+    4) traffic lights (red/yellow/green/unknown)
 
     Input: jpg/jpeg image path
     Output: structured JSON-serializable dict
@@ -316,6 +320,37 @@ class CoreDetector:
     def _to_int_bbox(xyxy: List[float]) -> List[int]:
         return [int(round(v)) for v in xyxy]
 
+    @staticmethod
+    def _detect_traffic_light_color(image_rgb: np.ndarray, bbox: List[int]) -> str:
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        h, w = image_rgb.shape[:2]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        if x2 <= x1 or y2 <= y1:
+            return "unknown"
+
+        crop = image_rgb[y1:y2, x1:x2]
+        if crop.size == 0:
+            return "unknown"
+
+        hsv = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)
+        bright_mask = (hsv[:, :, 1] > 80) & (hsv[:, :, 2] > 80)
+
+        def _count(lower: List[int], upper: List[int]) -> int:
+            mask = cv2.inRange(hsv, np.array(lower), np.array(upper))
+            return int(np.sum((mask > 0) & bright_mask))
+
+        red1 = _count([0, 100, 100], [10, 255, 255])
+        red2 = _count([160, 100, 100], [180, 255, 255])
+        yellow = _count([18, 80, 100], [38, 255, 255])
+        green = _count([40, 80, 80], [90, 255, 255])
+
+        counts = {"red": red1 + red2, "yellow": yellow, "green": green}
+        best_color = max(counts, key=counts.get)
+        if counts[best_color] <= 20:
+            return "unknown"
+        return best_color
+
     def _default_vis_path(self, image_path: Path) -> str:
         stem = image_path.stem
         return str((self.output_dir / f"{stem}_detected.jpg").resolve())
@@ -418,9 +453,14 @@ class CoreDetector:
                 )
         return detections
 
-    def _parse_scene(self, results: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    def _parse_scene(
+        self,
+        results: Any,
+        image_rgb: np.ndarray,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         pedestrians: List[Dict[str, Any]] = []
         vehicles: List[Dict[str, Any]] = []
+        traffic_lights: List[Dict[str, Any]] = []
 
         for r in results:
             if r.boxes is None:
@@ -448,8 +488,18 @@ class CoreDetector:
                             "class_name": VEHICLE_CLASS_MAP[cls_id],
                         }
                     )
+                elif cls_id == 9:
+                    light_color = self._detect_traffic_light_color(image_rgb, bbox)
+                    if light_color not in TRAFFIC_LIGHT_COLORS:
+                        light_color = "unknown"
+                    traffic_lights.append(
+                        {
+                            "light_color": light_color,
+                            "confidence": conf_v,
+                        }
+                    )
 
-        return pedestrians, vehicles
+        return pedestrians, vehicles, traffic_lights
 
     def _predict_sign(self, source: Any) -> Any:
         return self.sign_model.predict(
@@ -474,16 +524,22 @@ class CoreDetector:
         )
 
     def _run_detection_serial(
-        self, source: Any
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        self,
+        source: Any,
+        image_rgb: np.ndarray,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         sign_results = self._predict_sign(source)
         scene_results = self._predict_scene(source)
 
         signs = self._parse_signs(sign_results)
-        pedestrians, vehicles = self._parse_scene(scene_results)
-        return signs, pedestrians, vehicles
+        pedestrians, vehicles, traffic_lights = self._parse_scene(scene_results, image_rgb)
+        return signs, pedestrians, vehicles, traffic_lights
 
-    def _run_detection(self, source: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    def _run_detection(
+        self,
+        source: Any,
+        image_rgb: np.ndarray,
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         if self._parallel_executor is not None:
             try:
                 sign_future = self._parallel_executor.submit(self._predict_sign, source)
@@ -491,8 +547,8 @@ class CoreDetector:
                 sign_results = sign_future.result()
                 scene_results = scene_future.result()
                 signs = self._parse_signs(sign_results)
-                pedestrians, vehicles = self._parse_scene(scene_results)
-                return signs, pedestrians, vehicles
+                pedestrians, vehicles, traffic_lights = self._parse_scene(scene_results, image_rgb)
+                return signs, pedestrians, vehicles, traffic_lights
             except Exception as exc:
                 # 并行链路异常时退回串行，优先保证服务连续性与结果稳定性。
                 logging.exception("并行推理失败，回退串行模式: %s", exc)
@@ -500,7 +556,7 @@ class CoreDetector:
                 self.close()
                 self._parallel_executor = None
 
-        return self._run_detection_serial(source)
+        return self._run_detection_serial(source, image_rgb)
 
     def close(self) -> None:
         if self._parallel_executor is not None:
@@ -535,7 +591,7 @@ class CoreDetector:
             width, height = rgb_image.size
             image_rgb = np.array(rgb_image)
 
-        signs, pedestrians, vehicles = self._run_detection(image_source)
+        signs, pedestrians, vehicles, traffic_lights = self._run_detection(image_source, image_rgb)
         self._apply_ocr_to_signs(image_rgb, signs)
         if save_visualization:
             vis_path = vis_output_path or self._default_vis_path(p)
@@ -556,6 +612,7 @@ class CoreDetector:
             "num_pedestrians": len(pedestrians),
             "vehicles": vehicles,
             "num_vehicles": len(vehicles),
+            "traffic_lights": traffic_lights,
         }
 
     def detect_base64(
@@ -583,7 +640,7 @@ class CoreDetector:
             width, height = image.size
             image_rgb = np.array(image)
 
-        signs, pedestrians, vehicles = self._run_detection(image)
+        signs, pedestrians, vehicles, traffic_lights = self._run_detection(image, image_rgb)
         self._apply_ocr_to_signs(image_rgb, signs)
 
         visualization_base64: Optional[str] = None
@@ -614,6 +671,7 @@ class CoreDetector:
             "num_pedestrians": len(pedestrians),
             "vehicles": vehicles,
             "num_vehicles": len(vehicles),
+            "traffic_lights": traffic_lights,
         }
         if return_visualization_base64 and isinstance(visualization_base64, str) and visualization_base64:
             result["visualization_base64"] = visualization_base64
@@ -623,7 +681,7 @@ class CoreDetector:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CoreDetector: jpg path -> signs/pedestrians/vehicles")
+    parser = argparse.ArgumentParser(description="CoreDetector: jpg path -> signs/pedestrians/vehicles/traffic_lights")
     parser.add_argument("--image", required=True, help="Input jpg/jpeg path")
     parser.add_argument("--sign-model", default=None, help="Traffic sign model path (.pt)")
     parser.add_argument("--scene-model", default=None, help="Scene model path (.pt), default yolov8n.pt")

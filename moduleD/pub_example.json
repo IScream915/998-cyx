@@ -20,5 +20,6 @@
         {"bbox": [403, 258, 473, 291], "confidence": 0.4222}
     ], 
     "num_vehicles": 8,
+    "traffic_lights": [],
     "tracked_pedestrians": true
 }

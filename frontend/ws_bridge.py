@@ -147,6 +147,7 @@ class ABWsBridge:
             "num_traffic_signs": self._to_non_negative_int(payload.get("num_traffic_signs")),
             "num_pedestrians": self._to_non_negative_int(payload.get("num_pedestrians")),
             "num_vehicles": self._to_non_negative_int(payload.get("num_vehicles")),
+            "traffic_lights": [],
         }
         source_mode = payload.get("source_mode")
         if isinstance(source_mode, str):
@@ -166,6 +167,28 @@ class ABWsBridge:
         yolo_overlay_base64 = payload.get("yolo_overlay_base64")
         if isinstance(yolo_overlay_base64, str) and yolo_overlay_base64:
             compact["yolo_overlay_base64"] = yolo_overlay_base64
+
+        raw_traffic_lights = payload.get("traffic_lights")
+        if isinstance(raw_traffic_lights, list):
+            slim_traffic_lights: list[dict[str, Any]] = []
+            for item in raw_traffic_lights:
+                if not isinstance(item, dict):
+                    continue
+                light_color = item.get("light_color", "unknown")
+                if not isinstance(light_color, str):
+                    light_color = "unknown"
+                light_color = light_color.strip().lower()
+                if light_color not in {"red", "yellow", "green", "unknown"}:
+                    light_color = "unknown"
+
+                confidence = self._to_float(item.get("confidence"))
+                slim_traffic_lights.append(
+                    {
+                        "light_color": light_color,
+                        "confidence": 0.0 if confidence is None else round(confidence, 4),
+                    }
+                )
+            compact["traffic_lights"] = slim_traffic_lights
         return compact
 
     def _compact_module_a_payload(self, payload: dict[str, Any], frame_id: int) -> dict[str, Any]:

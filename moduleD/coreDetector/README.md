@@ -6,6 +6,7 @@ A portable detector module that can be copied into another project and run direc
 - traffic signs
 - pedestrians (`person`)
 - vehicles (`bicycle`, `car`, `motorcycle`, `bus`, `truck`)
+- traffic lights (`red`, `yellow`, `green`, `unknown`)
 
 For numeric traffic signs (`pl/il/pm/ph/pr`), OCR-primary correction is enabled by default:
 - OCR confidence high enough: use OCR-derived class
@@ -79,6 +80,9 @@ result = detector.detect_base64(image_base64_str)
 print(result)
 ```
 
+Result payload includes:
+- `traffic_lights`: `[{ "light_color": str, "confidence": float }]`
+
 ## Default model path priority
 
 If no model path is passed:
@@ -90,7 +94,7 @@ If no model path is passed:
 - `coreDetector/weights/yolov8s.pt`
 - fallback: `yolov8s.pt`
 
-2. Scene model (pedestrian + vehicle)
+2. Scene model (pedestrian + vehicle + traffic light)
 - `coreDetector/weights/yolov8n.pt`
 - fallback: `yolov8n.pt`
 

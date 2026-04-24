@@ -121,6 +121,37 @@ def _slim_detections(items: Any, include_class_name: bool = False) -> list[dict[
     return slim
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _slim_traffic_lights(items: Any) -> list[dict[str, Any]]:
+    slim: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return slim
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        light_color = item.get("light_color", "unknown")
+        if not isinstance(light_color, str):
+            light_color = "unknown"
+        light_color = light_color.strip().lower()
+        if light_color not in {"red", "yellow", "green", "unknown"}:
+            light_color = "unknown"
+
+        slim.append(
+            {
+                "light_color": light_color,
+                "confidence": round(_to_float(item.get("confidence"), 0.0), 4),
+            }
+        )
+    return slim
+
+
 def _natural_sort_key(text: str) -> list[Any]:
     return [int(token) if token.isdigit() else token.lower() for token in re.split(r"(\d+)", text)]
 
@@ -557,6 +588,7 @@ def main() -> None:
         traffic_signs = _slim_detections(detect_result.get("traffic_signs", []), include_class_name=True)
         pedestrians = _slim_detections(detect_result.get("pedestrians", []))
         vehicles = _slim_detections(detect_result.get("vehicles", []))
+        traffic_lights = _slim_traffic_lights(detect_result.get("traffic_lights", []))
 
         payload: dict[str, Any] = {
             "frame_id": frame_id,
@@ -568,6 +600,7 @@ def main() -> None:
             "num_pedestrians": len(pedestrians),
             "vehicles": vehicles,
             "num_vehicles": len(vehicles),
+            "traffic_lights": traffic_lights,
             "tracked_pedestrians": bool(detect_result.get("tracked_pedestrians", False)),
         }
 
