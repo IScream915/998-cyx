@@ -54,6 +54,26 @@ function formatBooleanFlag(value) {
   return "-";
 }
 
+function formatModuleATableValue(value) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toFixed(6).replace(/\.?0+$/, "");
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (_err) {
+    return String(value);
+  }
+}
+
 export function mount(container, { components }) {
   const state = {
     socket: null,
@@ -192,11 +212,15 @@ export function mount(container, { components }) {
         { label: "frame_id", value: String(frameId ?? "-") },
       ]),
     );
+    const fieldsGrid = document.createElement("div");
+    fieldsGrid.className = "fullflow-a-grid";
+    moduleADataRoot.appendChild(fieldsGrid);
 
     for (const fieldName of fieldNames) {
       const rawValue = syncMeta[fieldName];
       const fieldPayload =
         rawValue && typeof rawValue === "object" && !Array.isArray(rawValue) ? rawValue : {};
+      const rows = Object.entries(fieldPayload).sort((a, b) => a[0].localeCompare(b[0], "zh-CN"));
 
       const section = document.createElement("section");
       section.className = "fullflow-a-field";
@@ -204,8 +228,50 @@ export function mount(container, { components }) {
       title.className = "fullflow-a-field-title mono";
       title.textContent = fieldName;
       section.appendChild(title);
-      section.appendChild(components.createJsonBlock(fieldPayload));
-      moduleADataRoot.appendChild(section);
+
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "fullflow-a-table-wrap";
+      const table = document.createElement("table");
+      table.className = "fullflow-a-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>键</th>
+            <th>值</th>
+          </tr>
+        </thead>
+      `;
+
+      const tbody = document.createElement("tbody");
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 2;
+        td.className = "fullflow-a-table-empty";
+        td.textContent = "暂无数据";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      } else {
+        for (const [key, value] of rows) {
+          const tr = document.createElement("tr");
+
+          const keyCell = document.createElement("td");
+          keyCell.className = "fullflow-a-table-key mono";
+          keyCell.textContent = key;
+
+          const valueCell = document.createElement("td");
+          valueCell.className = "fullflow-a-table-value mono";
+          valueCell.textContent = formatModuleATableValue(value);
+
+          tr.appendChild(keyCell);
+          tr.appendChild(valueCell);
+          tbody.appendChild(tr);
+        }
+      }
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+      section.appendChild(tableWrap);
+      fieldsGrid.appendChild(section);
     }
   }
 
