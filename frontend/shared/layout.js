@@ -1,38 +1,38 @@
 export const NAV_ITEMS = [
   {
     key: "fullflow",
-    label: "全流程展示",
-    desc: "协同演示",
-    title: "全流程展示",
+    label: "Full Pipeline",
+    desc: "Coordinated demo",
+    title: "Full Pipeline Demo",
     subtitle: "",
   },
   {
     key: "module-b",
-    label: "模块B展示",
-    desc: "场景分类与热力图",
-    title: "模块B展示",
+    label: "Module B",
+    desc: "Scene classification and heatmap",
+    title: "Module B Demo",
     subtitle: "",
   },
   {
     key: "module-c",
-    label: "模块C展示",
-    desc: "实时追踪叠加页",
-    title: "模块C展示",
-    subtitle: "左右双窗实时叠加展示盲区追踪与告警",
+    label: "Module C",
+    desc: "Live tracking overlay",
+    title: "Module C Demo",
+    subtitle: "Live dual-view blind-spot tracking and alerts",
   },
   {
     key: "module-d",
-    label: "模块D展示",
-    desc: "本地序列与检测统计",
-    title: "模块D展示",
+    label: "Module D",
+    desc: "Local sequence and detection stats",
+    title: "Module D Demo",
     subtitle: "",
   },
   {
     key: "module-e",
-    label: "模块E展示",
-    desc: "仿真触发与仲裁结果",
-    title: "模块E展示",
-    subtitle: "通过仿真上游输入独立触发 moduleE 提醒流程",
+    label: "Module E",
+    desc: "Simulation trigger and arbitration",
+    title: "Module E Demo",
+    subtitle: "Trigger the moduleE reminder flow with simulated upstream input",
   },
 ];
 
@@ -120,7 +120,7 @@ export function setupLayout(onNavigate) {
   const overlay = document.getElementById("mobile-overlay");
 
   if (!navRoot || !sidebarToggle || !mobileMenuBtn || !overlay) {
-    throw new Error("页面骨架节点缺失，无法初始化布局");
+    throw new Error("Page shell nodes are missing; layout cannot be initialized");
   }
 
   renderNav(navRoot, onNavigate);

@@ -3,9 +3,17 @@ const LEVEL_STYLE = {
   WARNING: { label: "WARNING", color: "#f4d38b", tone: "warn" },
   DANGER: { label: "DANGER", color: "#ef9f9f", tone: "danger" },
 };
+const HAN_TEXT_RE = /[\u3400-\u9fff]/u;
 
 function getLevelStyle(level) {
   return LEVEL_STYLE[level] ?? LEVEL_STYLE.SAFE;
+}
+
+function toDisplayText(value, fallback = "non-English text") {
+  if (typeof value !== "string") {
+    return value;
+  }
+  return HAN_TEXT_RE.test(value) ? fallback : value;
 }
 
 function normalizeSidePayload(framePayload, side) {
@@ -30,6 +38,9 @@ function shouldRenderZone(zone) {
 
 function createEmptyState(canvas, title, detail) {
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return;
+  }
   const width = 960;
   const height = 540;
   if (canvas.width !== width || canvas.height !== height) {
@@ -129,7 +140,8 @@ function drawTrackBox(ctx, track, alertLevel) {
   ctx.strokeRect(x1, y1, width, height);
 
   const confidence = Number(track?.confidence ?? 0);
-  const label = `#${track?.track_id ?? "-"} ${track?.class_name ?? "obj"} ${(confidence * 100).toFixed(0)}%`;
+  const className = toDisplayText(track?.class_name ?? "obj", "object");
+  const label = `#${track?.track_id ?? "-"} ${className} ${(confidence * 100).toFixed(0)}%`;
   ctx.font = '600 16px "IBM Plex Sans", sans-serif';
   const labelWidth = ctx.measureText(label).width + 18;
   const labelHeight = 26;
@@ -150,7 +162,7 @@ function drawSideFrame(canvas, framePayload, side, sideLabel, imageObject) {
   const zoneStyle = getLevelStyle(zoneLevel);
 
   if (!imageObject) {
-    createEmptyState(canvas, `${sideLabel} 画面待接入`, "等待桥接层收到图像与 tracker 结果");
+    createEmptyState(canvas, `${sideLabel} view pending`, "Waiting for the bridge to receive images and tracker results");
     return;
   }
 
@@ -209,7 +221,7 @@ function createDisplayJson(framePayload) {
   if (!framePayload) {
     return {};
   }
-  return {
+  return sanitizeDisplayPayload({
     frame_id: framePayload.frame_id,
     t_sync: framePayload.t_sync,
     cameras: {
@@ -223,7 +235,22 @@ function createDisplayJson(framePayload) {
       },
     },
     moduleCD: framePayload.moduleCD,
-  };
+  });
+}
+
+function sanitizeDisplayPayload(value) {
+  if (typeof value === "string") {
+    return toDisplayText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeDisplayPayload(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, sanitizeDisplayPayload(item)]),
+    );
+  }
+  return value;
 }
 
 function loadImage(src) {
@@ -233,6 +260,10 @@ function loadImage(src) {
     image.onerror = () => reject(new Error("image load failed"));
     image.src = src;
   });
+}
+
+function isModuleCStatusMessage(payload) {
+  return payload?.event === "bridge_status" && payload?.bridge === "module-c";
 }
 
 async function resolveImages(framePayload, state) {
@@ -275,8 +306,8 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">moduleCD tracker 实时叠加</h3>
-            <p class="card-subtitle">WebSocket 实时流 + 左右双窗盲区追踪叠加</p>
+            <h3 class="card-title">Live moduleCD Tracker Overlay</h3>
+            <p class="card-subtitle">WebSocket live stream with dual-view blind-spot tracking</p>
           </div>
           <div class="module-c-legend">
             <span class="legend-chip"><i class="legend-dot safe"></i>SAFE</span>
@@ -286,27 +317,27 @@ export function mount(container, { components }) {
         </header>
         <div class="card-body module-c-status-grid">
           <div class="status-card">
-            <span class="status-label">WebSocket 状态</span>
-            <span id="module-c-stream-status" class="status-pill">连接中</span>
+            <span class="status-label">WebSocket Status</span>
+            <span id="module-c-stream-status" class="status-pill">Connecting</span>
           </div>
           <div class="status-card">
-            <span class="status-label">最近 frame_id</span>
+            <span class="status-label">Latest frame_id</span>
             <span id="module-c-frame-id" class="status-value mono">-</span>
           </div>
           <div class="status-card">
-            <span class="status-label">桥接客户端</span>
+            <span class="status-label">Bridge Clients</span>
             <span id="module-c-client-count" class="status-value mono">0</span>
           </div>
           <div class="status-card">
-            <span class="status-label">待配对 input/output</span>
+            <span class="status-label">Pending input/output</span>
             <span id="module-c-pending" class="status-value mono">0 / 0</span>
           </div>
           <div class="status-card">
-            <span class="status-label">丢弃 input/output</span>
+            <span class="status-label">Dropped input/output</span>
             <span id="module-c-dropped" class="status-value mono">0 / 0</span>
           </div>
           <div class="status-card">
-            <span class="status-label">输出帧链路</span>
+            <span class="status-label">Output Frame Chain</span>
             <span id="module-c-frame-chain" class="status-value mono">- / - / -</span>
           </div>
         </div>
@@ -316,7 +347,7 @@ export function mount(container, { components }) {
         <article class="card viewer-card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">左后视画面</h3>
+              <h3 class="card-title">Left Rear View</h3>
               <p class="card-subtitle">zone / tracks / alerts / predictions</p>
             </div>
             <div class="viewer-side-meta">
@@ -325,14 +356,14 @@ export function mount(container, { components }) {
             </div>
           </header>
           <div class="card-body viewer-stage">
-            <canvas id="module-c-left-canvas" class="viewer-canvas" aria-label="左后视追踪画面"></canvas>
+            <canvas id="module-c-left-canvas" class="viewer-canvas" aria-label="Left rear tracking view"></canvas>
           </div>
         </article>
 
         <article class="card viewer-card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">右后视画面</h3>
+              <h3 class="card-title">Right Rear View</h3>
               <p class="card-subtitle">zone / tracks / alerts / predictions</p>
             </div>
             <div class="viewer-side-meta">
@@ -341,7 +372,7 @@ export function mount(container, { components }) {
             </div>
           </header>
           <div class="card-body viewer-stage">
-            <canvas id="module-c-right-canvas" class="viewer-canvas" aria-label="右后视追踪画面"></canvas>
+            <canvas id="module-c-right-canvas" class="viewer-canvas" aria-label="Right rear tracking view"></canvas>
           </div>
         </article>
       </section>
@@ -350,15 +381,15 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">当前帧摘要</h3>
-              <p class="card-subtitle">moduleCD 原始统计 + BSD 侧窗状态</p>
+              <h3 class="card-title">Current Frame Summary</h3>
+              <p class="card-subtitle">Raw moduleCD stats and BSD side-view state</p>
             </div>
           </header>
           <div class="card-body">
             <div id="module-c-summary"></div>
             <div class="module-c-alerts">
               <div class="module-c-alerts-head">
-                <h4>告警列表</h4>
+                <h4>Alert List</h4>
                 <span id="module-c-alert-total" class="badge mono">0</span>
               </div>
               <ol id="module-c-alert-list" class="module-c-alert-list"></ol>
@@ -369,8 +400,8 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">原始 JSON</h3>
-              <p class="card-subtitle">保留 moduleCD 完整输出，摄像头 base64 已省略</p>
+              <h3 class="card-title">Raw JSON</h3>
+              <p class="card-subtitle">Full moduleCD output with camera base64 omitted</p>
             </div>
           </header>
           <div class="card-body">
@@ -413,15 +444,25 @@ export function mount(container, { components }) {
     const leftPayload = normalizeSidePayload(framePayload, "left");
     const rightPayload = normalizeSidePayload(framePayload, "right");
     const streamTone =
-      state.streamState === "live" ? "success" : state.streamState === "reconnecting" ? "warn" : "danger";
+      state.streamState === "live"
+        ? "success"
+        : state.streamState === "connected"
+          ? "success"
+        : state.streamState === "connecting" || state.streamState === "reconnecting"
+          ? "warn"
+          : "danger";
     const streamLabel =
       state.streamState === "live"
-        ? "实时接收中"
+        ? "Receiving Live"
+        : state.streamState === "connected"
+          ? "WebSocket Connected"
         : state.streamState === "reconnecting"
-          ? "重连中"
+          ? "Reconnecting"
           : state.streamState === "connecting"
-            ? "连接中"
-            : "等待数据";
+            ? "Connecting"
+            : state.streamState === "unavailable"
+              ? "Bridge Unavailable"
+              : "Waiting for Data";
 
     refs.streamStatus.textContent = streamLabel;
     refs.streamStatus.className = `status-pill ${streamTone}`;
@@ -464,7 +505,7 @@ export function mount(container, { components }) {
     if (alerts.length === 0) {
       const item = document.createElement("li");
       item.className = "module-c-alert-item is-empty";
-      item.textContent = "当前没有 WARNING / DANGER 告警。";
+      item.textContent = "No WARNING / DANGER alerts.";
       refs.alertList.appendChild(item);
     } else {
       for (const alert of alerts) {
@@ -482,8 +523,8 @@ export function mount(container, { components }) {
   }
 
   function renderCanvases() {
-    drawSideFrame(refs.leftCanvas, state.latestFrame, "left", "左后视", state.latestImages.left);
-    drawSideFrame(refs.rightCanvas, state.latestFrame, "right", "右后视", state.latestImages.right);
+    drawSideFrame(refs.leftCanvas, state.latestFrame, "left", "Left Rear", state.latestImages.left);
+    drawSideFrame(refs.rightCanvas, state.latestFrame, "right", "Right Rear", state.latestImages.right);
   }
 
   async function applyIncomingFrame(framePayload) {
@@ -515,16 +556,27 @@ export function mount(container, { components }) {
         throw new Error(`health ${response.status}`);
       }
       state.health = await response.json();
-      if (!state.latestFrame && state.streamState === "connecting") {
+      if (state.health?.available === false) {
+        state.streamState = "unavailable";
+        disconnectStream();
+        renderUnavailableCanvases(state.health?.error);
+        renderTextState();
+        return;
+      }
+      if (!state.latestFrame && state.socket?.readyState === WebSocket.OPEN) {
+        state.streamState = "connected";
+      } else if (!state.latestFrame && state.streamState === "connecting") {
         state.streamState = "idle";
       }
       if (state.lastMessageAt > 0 && Date.now() - state.lastMessageAt > 5000) {
-        state.streamState = "reconnecting";
+        state.streamState = state.socket?.readyState === WebSocket.OPEN ? "connected" : "reconnecting";
       }
     } catch (_error) {
       state.health = null;
       if (!state.latestFrame) {
-        state.streamState = "idle";
+        state.streamState = "unavailable";
+        disconnectStream();
+        renderUnavailableCanvases("Module C API is unavailable");
       } else {
         state.streamState = "reconnecting";
       }
@@ -544,8 +596,27 @@ export function mount(container, { components }) {
     }
   }
 
+  function disconnectStream() {
+    clearReconnectTimer();
+    if (!state.socket) {
+      return;
+    }
+    state.socket.onopen = null;
+    state.socket.onmessage = null;
+    state.socket.onerror = null;
+    state.socket.onclose = null;
+    state.socket.close();
+    state.socket = null;
+  }
+
+  function renderUnavailableCanvases(rawReason) {
+    const reason = typeof rawReason === "string" && rawReason ? rawReason : "Module C bridge is unavailable";
+    createEmptyState(refs.leftCanvas, "Left rear view unavailable", reason);
+    createEmptyState(refs.rightCanvas, "Right rear view unavailable", reason);
+  }
+
   function scheduleReconnect(delayMs = 1000) {
-    if (state.destroyed || state.reconnectTimerId !== null) {
+    if (state.destroyed || state.reconnectTimerId !== null || state.health?.available === false) {
       return;
     }
     state.streamState = "reconnecting";
@@ -557,15 +628,13 @@ export function mount(container, { components }) {
   }
 
   function connectStream() {
-    clearReconnectTimer();
-    if (state.socket) {
-      state.socket.onopen = null;
-      state.socket.onmessage = null;
-      state.socket.onerror = null;
-      state.socket.onclose = null;
-      state.socket.close();
-      state.socket = null;
+    if (state.health?.available === false) {
+      state.streamState = "unavailable";
+      renderTextState();
+      return;
     }
+    clearReconnectTimer();
+    disconnectStream();
     state.streamState = "connecting";
     renderTextState();
 
@@ -577,7 +646,7 @@ export function mount(container, { components }) {
         return;
       }
       if (!state.latestFrame) {
-        state.streamState = "connecting";
+        state.streamState = "connected";
         renderTextState();
       }
     };
@@ -588,6 +657,16 @@ export function mount(container, { components }) {
       }
       try {
         const payload = JSON.parse(event.data);
+        if (isModuleCStatusMessage(payload)) {
+          if (
+            state.streamState !== "live" ||
+            (state.lastMessageAt > 0 && Date.now() - state.lastMessageAt > 5000)
+          ) {
+            state.streamState = "connected";
+          }
+          renderTextState();
+          return;
+        }
         applyIncomingFrame(payload);
       } catch (_error) {
         scheduleReconnect();
@@ -611,23 +690,20 @@ export function mount(container, { components }) {
     };
   }
 
-  createEmptyState(refs.leftCanvas, "左后视画面待接入", "等待桥接层收到图像与 tracker 结果");
-  createEmptyState(refs.rightCanvas, "右后视画面待接入", "等待桥接层收到图像与 tracker 结果");
+  createEmptyState(refs.leftCanvas, "Left rear view pending", "Waiting for the bridge to receive images and tracker results");
+  createEmptyState(refs.rightCanvas, "Right rear view pending", "Waiting for the bridge to receive images and tracker results");
   renderTextState();
-  connectStream();
-  refreshHealth();
+  refreshHealth().then(() => {
+    if (!state.destroyed && state.health?.available !== false) {
+      connectStream();
+    }
+  });
   state.healthTimerId = window.setInterval(refreshHealth, 2000);
 
   return () => {
     state.destroyed = true;
     clearReconnectTimer();
-    if (state.socket) {
-      state.socket.onopen = null;
-      state.socket.onmessage = null;
-      state.socket.onerror = null;
-      state.socket.onclose = null;
-      state.socket.close();
-    }
+    disconnectStream();
     if (state.healthTimerId !== null) {
       window.clearInterval(state.healthTimerId);
     }

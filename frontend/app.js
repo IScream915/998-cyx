@@ -33,7 +33,7 @@ const PAGE_REGISTRY = {
 
 const pageRoot = document.getElementById("page-root");
 if (!pageRoot) {
-  throw new Error("page-root 节点不存在");
+  throw new Error("page-root node is missing");
 }
 
 let activeCleanup = null;
@@ -64,7 +64,7 @@ async function renderRoute(routeKey) {
   setPageStyle(pageDef.stylePath);
 
   cleanupActivePage();
-  pageRoot.innerHTML = '<div class="page-loading">页面加载中...</div>';
+  pageRoot.innerHTML = '<div class="page-loading">Loading page...</div>';
 
   try {
     const pageModule = await pageDef.loader();
@@ -84,7 +84,7 @@ async function renderRoute(routeKey) {
     }
   } catch (error) {
     console.error(error);
-    pageRoot.innerHTML = '<div class="page-error">页面加载失败，请检查控制台错误信息。</div>';
+    pageRoot.innerHTML = '<div class="page-error">Page failed to load. Check the console for details.</div>';
   }
 }
 

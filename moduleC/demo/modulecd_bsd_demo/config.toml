@@ -2,8 +2,8 @@
 fixed_delta_seconds = 0.05
 
 [demo.zmq]
-input_addr = "tcp://192.168.31.157:5050"
-input_bind = "tcp://*:5051"
+input_addr = "tcp://10.142.167.172:5050"
+input_bind = "tcp://*:5050"
 input_topic = "Frame"
 output_bind = "tcp://*:5058"
 output_endpoint = "tcp://localhost:5058"
@@ -12,7 +12,7 @@ recv_timeout_ms = 1000
 
 [demo.frontend]
 bind = "tcp://*:5059"
-endpoint = "tcp://localhost:5059"
+endpoint = "tcp://10.142.167.172:5059"
 topic = "Frame"
 
 [demo.sensors]

@@ -12,7 +12,7 @@ export function safeStringify(payload) {
   try {
     return JSON.stringify(payload, null, 2);
   } catch (_err) {
-    return "{\n  \"error\": \"payload 无法序列化\"\n}";
+    return "{\n  \"error\": \"payload could not be serialized\"\n}";
   }
 }
 
@@ -62,7 +62,7 @@ export function formatPercent(value) {
 }
 
 export function formatClock(date = new Date()) {
-  return date.toLocaleTimeString("zh-CN", {
+  return date.toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",

@@ -1,5 +1,23 @@
 const DEFAULT_WS_PORT = 8765;
 const EMPTY_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const HAN_TEXT_RE = /[\u3400-\u9fff]/u;
+const ERROR_TEXT_MAP = [
+  [/^scene .*$/i, "Invalid scene"],
+  [/scene \u4e0d\u80fd\u4e3a\u7a7a/u, "scene is required"],
+  [/scene \u975e\u6cd5/u, "Invalid scene"],
+  [/scene \u8d8a\u754c/u, "Scene path is outside the scenes root"],
+  [/\u573a\u666f\u76ee\u5f55\u4e0d\u5b58\u5728/u, "Scene directory does not exist"],
+  [/\u573a\u666f\u76ee\u5f55\u4e0b\u6ca1\u6709\u53ef\u64ad\u653e\u56fe\u7247/u, "No playable images found in the scene directory"],
+  [/\u5f53\u524d\u672a\u9009\u62e9\u573a\u666f\u6216\u573a\u666f\u65e0\u56fe\u7247/u, "No scene is selected or the selected scene has no images"],
+  [/mode \u4ec5\u652f\u6301 zmq\/local/u, "mode only supports zmq/local"],
+  [/action \u4ec5\u652f\u6301 play\/pause\/reset/u, "action only supports play/pause/reset"],
+  [/Content-Length \u975e\u6cd5/u, "Invalid Content-Length"],
+  [/\u8bf7\u6c42\u4f53\u4e0d\u662f\u5408\u6cd5JSON/u, "Request body is not valid JSON"],
+  [/\u8bf7\u6c42\u4f53JSON\u9876\u5c42\u5fc5\u987b\u662f\u5bf9\u8c61/u, "Request body JSON top level must be an object"],
+  [/\u63a5\u53e3\u4e0d\u5b58\u5728/u, "Endpoint does not exist"],
+  [/\u670d\u52a1\u5185\u90e8\u9519\u8bef/u, "Internal service error"],
+  [/\u63a7\u5236\u670d\u52a1\u4e0d\u53ef\u7528/u, "Control service is unavailable"],
+];
 
 function toNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -16,6 +34,24 @@ function getWebSocketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const host = window.location.hostname || "127.0.0.1";
   return `${protocol}://${host}:${DEFAULT_WS_PORT}`;
+}
+
+function toEnglishMessage(message) {
+  const text = String(message ?? "");
+  if (!HAN_TEXT_RE.test(text)) {
+    return text;
+  }
+  for (const [pattern, replacement] of ERROR_TEXT_MAP) {
+    if (pattern.test(text)) {
+      return replacement;
+    }
+  }
+  return "Backend returned a non-English message. Check service logs for details.";
+}
+
+function displaySceneName(name, index = 0) {
+  const text = String(name || "");
+  return HAN_TEXT_RE.test(text) ? `Scene ${index + 1}` : text;
 }
 
 export function mount(container, { components }) {
@@ -36,20 +72,20 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">模块D独立展示</h3>
-            <p class="card-subtitle">左侧原始场景序列，右侧为YOLO识别框预留窗口</p>
+            <h3 class="card-title">Module D Standalone Demo</h3>
+            <p class="card-subtitle">Original scene sequence on the left, YOLO detection overlay on the right</p>
           </div>
-          <span id="module-d-play-state" class="badge">初始化中</span>
+          <span id="module-d-play-state" class="badge">Initializing</span>
         </header>
         <div class="card-body">
           <div class="btn-row">
             <label>
-              <span class="card-subtitle">场景</span>
+              <span class="card-subtitle">Scene</span>
               <select id="module-d-scene-select" class="select"></select>
             </label>
-            <button id="module-d-play" class="btn is-primary" type="button">播放</button>
-            <button id="module-d-pause" class="btn" type="button">暂停</button>
-            <button id="module-d-reset" class="btn" type="button">重置</button>
+            <button id="module-d-play" class="btn is-primary" type="button">Play</button>
+            <button id="module-d-pause" class="btn" type="button">Pause</button>
+            <button id="module-d-reset" class="btn" type="button">Reset</button>
           </div>
         </div>
       </article>
@@ -58,17 +94,17 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">驾驶场景原图</h3>
-              <p id="module-d-scene-desc" class="card-subtitle">等待选择场景</p>
+              <h3 class="card-title">Original Driving Scene</h3>
+              <p id="module-d-scene-desc" class="card-subtitle">Waiting for scene selection</p>
             </div>
             <span id="module-d-frame-badge" class="badge mono">frame_id -</span>
           </header>
           <div class="card-body">
             <div class="viewer-frame">
-              <img id="module-d-image" alt="模块D场景帧" loading="lazy" src="${EMPTY_PIXEL}" />
+              <img id="module-d-image" alt="Module D scene frame" loading="lazy" src="${EMPTY_PIXEL}" />
             </div>
             <div class="module-d-meta">
-              <span id="module-d-progress-label">帧进度 -/-</span>
+              <span id="module-d-progress-label">Frame progress -/-</span>
               <span id="module-d-progress-percent">0%</span>
             </div>
             <input id="module-d-progress" class="range" type="range" min="0" value="0" step="1" disabled />
@@ -78,8 +114,8 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">YOLO识别框预留窗口</h3>
-              <p class="card-subtitle">实时展示检测框叠加图</p>
+              <h3 class="card-title">YOLO Detection Overlay</h3>
+              <p class="card-subtitle">Live detection-box overlay</p>
             </div>
           </header>
           <div class="card-body">
@@ -87,7 +123,7 @@ export function mount(container, { components }) {
               <img
                 id="module-d-yolo-image"
                 class="yolo-image"
-                alt="模块D检测框"
+                alt="Module D detection overlay"
                 loading="lazy"
                 src="${EMPTY_PIXEL}"
                 hidden
@@ -102,8 +138,8 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">模块D当前帧输出</h3>
-            <p class="card-subtitle">交通标志、行人、车辆检测统计</p>
+            <h3 class="card-title">Module D Current Frame Output</h3>
+            <p class="card-subtitle">Traffic sign, pedestrian, and vehicle detection stats</p>
           </div>
         </header>
         <div class="card-body">
@@ -159,7 +195,7 @@ export function mount(container, { components }) {
     });
     const payload = await resp.json().catch(() => ({}));
     if (!resp.ok || payload?.ok === false) {
-      const msg = payload?.error || `HTTP ${resp.status}`;
+      const msg = toEnglishMessage(payload?.error || `HTTP ${resp.status}`);
       throw new Error(msg);
     }
     return payload;
@@ -211,24 +247,24 @@ export function mount(container, { components }) {
     const folder = typeof ctrl.scene_folder === "string" ? ctrl.scene_folder : "";
 
     if (mode !== "local") {
-      setPlayStateText("ZMQ模式", "warn");
+      setPlayStateText("ZMQ Mode", "warn");
     } else if (playing) {
-      setPlayStateText("播放中", "success");
+      setPlayStateText("Playing", "success");
     } else if (frameTotal > 0 && frameIndex === 0) {
-      setPlayStateText("未播放");
+      setPlayStateText("Not Played");
     } else {
-      setPlayStateText("已暂停", "warn");
+      setPlayStateText("Paused", "warn");
     }
 
     if (folder) {
-      sceneDesc.textContent = `${folder} · 本地目录播放`;
+      sceneDesc.textContent = `${displaySceneName(folder)} · Local directory playback`;
     }
 
     const safeTotal = frameTotal > 0 ? frameTotal : 1;
     const safeIndex = Math.max(0, Math.min(frameIndex, safeTotal - 1));
     progress.max = String(Math.max(0, safeTotal - 1));
     progress.value = String(safeIndex);
-    progressLabel.textContent = `帧进度 ${safeIndex + 1}/${safeTotal}`;
+    progressLabel.textContent = `Frame progress ${safeIndex + 1}/${safeTotal}`;
     progressPercent.textContent = `${Math.round(((safeIndex + 1) / safeTotal) * 100)}%`;
   }
 
@@ -251,7 +287,7 @@ export function mount(container, { components }) {
     if (imageRelpath) {
       const cleaned = imageRelpath.replace(/^\/+/, "");
       image.src = `./${cleaned}`;
-      image.alt = `模块D场景帧 ${frameId}`;
+      image.alt = `Module D scene frame ${frameId}`;
     }
 
     if (sourceMode === "local") {
@@ -263,13 +299,13 @@ export function mount(container, { components }) {
     frameBadge.textContent = `frame_id ${frameId}`;
 
     if (sceneFolder) {
-      sceneDesc.textContent = `${sceneFolder} · 本地目录播放`;
+      sceneDesc.textContent = `${displaySceneName(sceneFolder)} · Local directory playback`;
     }
 
     if (frameIndex !== null && frameTotal !== null && frameTotal > 0) {
       progress.max = String(Math.max(0, frameTotal - 1));
       progress.value = String(Math.max(0, Math.min(frameIndex, frameTotal - 1)));
-      progressLabel.textContent = `帧进度 ${Math.min(frameIndex + 1, frameTotal)}/${frameTotal}`;
+      progressLabel.textContent = `Frame progress ${Math.min(frameIndex + 1, frameTotal)}/${frameTotal}`;
       progressPercent.textContent = `${Math.round((Math.min(frameIndex + 1, frameTotal) / frameTotal) * 100)}%`;
     }
 
@@ -284,7 +320,7 @@ export function mount(container, { components }) {
     );
 
     if (sourceMode === "local") {
-      setPlayStateText("播放中", "success");
+      setPlayStateText("Playing", "success");
     }
   }
 
@@ -295,19 +331,19 @@ export function mount(container, { components }) {
     if (!state.scenes.length) {
       const option = document.createElement("option");
       option.value = "";
-      option.textContent = "无可用场景目录";
+      option.textContent = "No scene directories available";
       sceneSelect.appendChild(option);
       sceneSelect.disabled = true;
       return;
     }
 
     sceneSelect.disabled = false;
-    for (const scene of state.scenes) {
+    state.scenes.forEach((scene, index) => {
       const option = document.createElement("option");
       option.value = scene.name;
-      option.textContent = `${scene.name} (${scene.frame_count})`;
+      option.textContent = `${displaySceneName(scene.name, index)} (${scene.frame_count})`;
       sceneSelect.appendChild(option);
-    }
+    });
 
     if (previous && state.scenes.some((item) => item.name === previous)) {
       state.selectedScene = previous;
@@ -341,7 +377,7 @@ export function mount(container, { components }) {
       body: JSON.stringify({ mode: "local" }),
     });
     renderControllerState(payload?.state ?? null);
-    appendLog("已切换 moduleD 到本地目录模式");
+    appendLog("Switched moduleD to local directory mode");
   }
 
   async function selectScene(sceneName) {
@@ -354,7 +390,7 @@ export function mount(container, { components }) {
     });
     state.selectedScene = sceneName;
     renderControllerState(payload?.state ?? null);
-    appendLog(`已切换场景: ${sceneName}`);
+    appendLog(`Scene switched: ${displaySceneName(sceneName)}`);
   }
 
   async function sendPlayerAction(action) {
@@ -363,8 +399,8 @@ export function mount(container, { components }) {
       body: JSON.stringify({ action }),
     });
     renderControllerState(payload?.state ?? null);
-    const actionText = action === "play" ? "播放" : action === "pause" ? "暂停" : "重置";
-    appendLog(`已发送控制: ${actionText}`);
+    const actionText = action === "play" ? "Play" : action === "pause" ? "Pause" : "Reset";
+    appendLog(`Control sent: ${actionText}`);
   }
 
   function scheduleReconnect() {
@@ -399,7 +435,7 @@ export function mount(container, { components }) {
         return;
       }
       state.reconnectAttempt = 0;
-      appendLog(`WebSocket 已连接: ${wsUrl}`);
+      appendLog(`WebSocket connected: ${wsUrl}`);
     });
 
     socket.addEventListener("message", (event) => {
@@ -431,7 +467,7 @@ export function mount(container, { components }) {
       if (state.destroyed) {
         return;
       }
-      appendLog("WebSocket 已断开，准备自动重连");
+      appendLog("WebSocket disconnected. Reconnecting automatically");
       scheduleReconnect();
     });
 
@@ -439,44 +475,44 @@ export function mount(container, { components }) {
       if (state.destroyed) {
         return;
       }
-      appendLog("WebSocket 连接异常");
+      appendLog("WebSocket connection error");
     });
   }
 
   bind(sceneSelect, "focus", () => {
     refreshSceneList().catch((err) => {
-      appendLog(`刷新场景列表失败: ${err.message}`);
+      appendLog(`Failed to refresh scene list: ${err.message}`);
     });
   });
 
   bind(sceneSelect, "pointerdown", () => {
     refreshSceneList().catch((err) => {
-      appendLog(`刷新场景列表失败: ${err.message}`);
+      appendLog(`Failed to refresh scene list: ${err.message}`);
     });
   });
 
   bind(sceneSelect, "change", (event) => {
     const sceneName = event.target.value;
     selectScene(sceneName).catch((err) => {
-      appendLog(`切换场景失败: ${err.message}`);
+      appendLog(`Failed to switch scene: ${err.message}`);
     });
   });
 
   bind(playBtn, "click", () => {
     sendPlayerAction("play").catch((err) => {
-      appendLog(`播放失败: ${err.message}`);
+      appendLog(`Play failed: ${err.message}`);
     });
   });
 
   bind(pauseBtn, "click", () => {
     sendPlayerAction("pause").catch((err) => {
-      appendLog(`暂停失败: ${err.message}`);
+      appendLog(`Pause failed: ${err.message}`);
     });
   });
 
   bind(resetBtn, "click", () => {
     sendPlayerAction("reset").catch((err) => {
-      appendLog(`重置失败: ${err.message}`);
+      appendLog(`Reset failed: ${err.message}`);
     });
   });
 
@@ -493,8 +529,8 @@ export function mount(container, { components }) {
       await fetchControllerState();
       connectWebSocket();
     } catch (err) {
-      appendLog(`初始化失败: ${err.message}`);
-      setPlayStateText("初始化失败", "danger");
+      appendLog(`Initialization failed: ${err.message}`);
+      setPlayStateText("Initialization Failed", "danger");
     }
   })();
 

@@ -1,5 +1,21 @@
 const DEFAULT_WS_PORT = 8765;
 const EMPTY_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const DISPLAY_TEXT_MAP = new Map([
+  ["\u524d\u65b9\u65bd\u5de5", "Roadwork Ahead"],
+  ["\u9650\u901f20", "Speed Limit 20"],
+  ["\u9650\u901f40", "Speed Limit 40"],
+  ["\u9650\u901f60", "Speed Limit 60"],
+  ["\u9650\u901f80", "Speed Limit 80"],
+  ["\u9650\u901f100", "Speed Limit 100"],
+  ["\u9650\u901f120", "Speed Limit 120"],
+]);
+
+function toDisplayText(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+  return DISPLAY_TEXT_MAP.get(value) ?? value;
+}
 
 function renderModuleMetricBody(body, components, metricRows) {
   components.clearNode(body);
@@ -28,7 +44,7 @@ function formatTime(tsSeconds, components) {
   if (ts === null) {
     return components.formatClock();
   }
-  return new Date(ts * 1000).toLocaleTimeString("zh-CN", {
+  return new Date(ts * 1000).toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
@@ -87,9 +103,9 @@ export function mount(container, { components }) {
       <article class="card fullflow-top">
         <header class="card-head">
           <div>
-            <h3 class="card-title">场景联动展示</h3>
+            <h3 class="card-title">Scenario Coordination Demo</h3>
           </div>
-          <span id="ws-status-badge" class="badge warn">连接中</span>
+          <span id="ws-status-badge" class="badge warn">Connecting</span>
         </header>
         <div class="card-body">
           <p id="ws-endpoint" class="ws-endpoint mono"></p>
@@ -100,16 +116,16 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">驾驶场景帧序列</h3>
+              <h3 class="card-title">Driving Scene Frame Sequence</h3>
             </div>
             <span id="frame-badge" class="badge mono">frame_id -</span>
           </header>
           <div class="card-body">
             <div class="stage-frame">
-              <img id="stage-image" src="${EMPTY_PIXEL}" alt="等待实时帧" loading="lazy" />
+              <img id="stage-image" src="${EMPTY_PIXEL}" alt="Waiting for live frame" loading="lazy" />
               <div class="stage-overlay">
                 <span id="stage-time-badge" class="badge mono">--:--:--</span>
-                <span id="stage-scene-badge" class="badge">实时流</span>
+                <span id="stage-scene-badge" class="badge">Live Stream</span>
               </div>
             </div>
           </div>
@@ -118,34 +134,34 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">模块输出实时面板</h3>
+              <h3 class="card-title">Live Module Output Panel</h3>
             </div>
           </header>
           <div class="card-body module-grid">
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleB 场景识别</h4>
+                <h4>moduleB Scene Classification</h4>
                 <span class="badge mono">B</span>
               </div>
               <div id="card-module-b" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleC 盲区监测</h4>
+                <h4>moduleC Blind-Spot Monitoring</h4>
                 <span class="badge mono">C</span>
               </div>
               <div id="card-module-c" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleD 检测结果</h4>
+                <h4>moduleD Detection Results</h4>
                 <span class="badge mono">D</span>
               </div>
               <div id="card-module-d" class="module-card-body"></div>
             </section>
             <section class="module-card">
               <div class="module-card-head">
-                <h4>moduleE 融合提醒</h4>
+                <h4>moduleE Fused Reminder</h4>
                 <span class="badge mono">E</span>
               </div>
               <div id="card-module-e" class="module-card-body"></div>
@@ -157,7 +173,7 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">模块A数据</h3>
+            <h3 class="card-title">Module A Data</h3>
           </div>
         </header>
         <div id="module-a-data" class="card-body fullflow-module-a-data"></div>
@@ -194,7 +210,7 @@ export function mount(container, { components }) {
       cardC,
       components,
       [
-        { label: "状态", value: "等待moduleC输出" },
+        { label: "status", value: "Waiting for moduleC output" },
         { label: "tracked_pedestrians", value: "-" },
       ],
     );
@@ -220,7 +236,7 @@ export function mount(container, { components }) {
       const rawValue = syncMeta[fieldName];
       const fieldPayload =
         rawValue && typeof rawValue === "object" && !Array.isArray(rawValue) ? rawValue : {};
-      const rows = Object.entries(fieldPayload).sort((a, b) => a[0].localeCompare(b[0], "zh-CN"));
+      const rows = Object.entries(fieldPayload).sort((a, b) => a[0].localeCompare(b[0], "en-US"));
 
       const section = document.createElement("section");
       section.className = "fullflow-a-field";
@@ -236,8 +252,8 @@ export function mount(container, { components }) {
       table.innerHTML = `
         <thead>
           <tr>
-            <th>键</th>
-            <th>值</th>
+            <th>Key</th>
+            <th>Value</th>
           </tr>
         </thead>
       `;
@@ -248,7 +264,7 @@ export function mount(container, { components }) {
         const td = document.createElement("td");
         td.colSpan = 2;
         td.className = "fullflow-a-table-empty";
-        td.textContent = "暂无数据";
+        td.textContent = "No data";
         tr.appendChild(td);
         tbody.appendChild(tr);
       } else {
@@ -347,10 +363,10 @@ export function mount(container, { components }) {
       {
         label: "detected_signs",
         value: Array.isArray(detectedSigns)
-          ? detectedSigns.join(", ") || "-"
+          ? detectedSigns.map((item) => toDisplayText(String(item))).join(", ") || "-"
           : detectedSigns === undefined || detectedSigns === null
             ? "-"
-            : String(detectedSigns),
+            : toDisplayText(String(detectedSigns)),
       },
     ];
     renderModuleMetricBody(cardE, components, metricRows);
@@ -359,78 +375,78 @@ export function mount(container, { components }) {
   function renderFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到ab_frame但frame_id非法，已忽略");
+      pushLog("Received ab_frame with invalid frame_id; ignored");
       return;
     }
 
     if (typeof payload?.image_src === "string" && payload.image_src.startsWith("data:image/jpeg;base64,")) {
       stageImage.src = payload.image_src;
-      stageImage.alt = `驾驶场景帧 ${frameId}`;
+      stageImage.alt = `Driving scene frame ${frameId}`;
     } else {
-      pushLog(`frame_id=${frameId} 的image_src非法，已忽略`);
+      pushLog(`Invalid image_src for frame_id=${frameId}; ignored`);
       return;
     }
 
     frameBadge.textContent = `frame_id ${Math.trunc(frameId)}`;
     stageTimeBadge.textContent = formatTime(payload?.ts, components);
-    stageSceneBadge.textContent = "实时流";
+    stageSceneBadge.textContent = "Live Stream";
 
     const moduleBPayload =
       payload?.moduleB && typeof payload.moduleB === "object" ? payload.moduleB : {};
     renderModuleB(moduleBPayload, Math.trunc(frameId));
-    pushLog(`接收配对帧 frame_id=${Math.trunc(frameId)}，已更新场景图与moduleB面板`);
+    pushLog(`Received paired frame frame_id=${Math.trunc(frameId)}; updated scene image and moduleB panel`);
   }
 
   function renderDFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到d_frame但frame_id非法，已忽略");
+      pushLog("Received d_frame with invalid frame_id; ignored");
       return;
     }
 
     const moduleDPayload =
       payload?.moduleD && typeof payload.moduleD === "object" ? payload.moduleD : {};
     renderModuleD(moduleDPayload, Math.trunc(frameId));
-    pushLog(`接收模块D输出 frame_id=${Math.trunc(frameId)}，已更新moduleD面板`);
+    pushLog(`Received moduleD output frame_id=${Math.trunc(frameId)}; updated moduleD panel`);
   }
 
   function renderCFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到c_frame但frame_id非法，已忽略");
+      pushLog("Received c_frame with invalid frame_id; ignored");
       return;
     }
 
     const moduleCPayload =
       payload?.moduleC && typeof payload.moduleC === "object" ? payload.moduleC : {};
     renderModuleC(moduleCPayload, Math.trunc(frameId));
-    pushLog(`接收模块C输出 frame_id=${Math.trunc(frameId)}，已更新moduleC面板`);
+    pushLog(`Received moduleC output frame_id=${Math.trunc(frameId)}; updated moduleC panel`);
   }
 
   function renderAFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到a_frame但frame_id非法，已忽略");
+      pushLog("Received a_frame with invalid frame_id; ignored");
       return;
     }
 
     const moduleAPayload =
       payload?.moduleA && typeof payload.moduleA === "object" ? payload.moduleA : {};
     renderModuleAData(moduleAPayload, Math.trunc(frameId));
-    pushLog(`接收模块A输出 frame_id=${Math.trunc(frameId)}，已更新模块A数据`);
+    pushLog(`Received moduleA output frame_id=${Math.trunc(frameId)}; updated Module A data`);
   }
 
   function renderEFrame(payload) {
     const frameId = toNumber(payload?.frame_id);
     if (frameId === null) {
-      pushLog("收到e_frame但frame_id非法，已忽略");
+      pushLog("Received e_frame with invalid frame_id; ignored");
       return;
     }
 
     const moduleEPayload =
       payload?.moduleE && typeof payload.moduleE === "object" ? payload.moduleE : {};
     renderModuleE(moduleEPayload, Math.trunc(frameId));
-    pushLog(`接收模块E输出 frame_id=${Math.trunc(frameId)}，已更新moduleE面板`);
+    pushLog(`Received moduleE output frame_id=${Math.trunc(frameId)}; updated moduleE panel`);
   }
 
   function scheduleReconnect() {
@@ -444,7 +460,7 @@ export function mount(container, { components }) {
 
     const delay = Math.min(10000, 1000 * 2 ** state.reconnectAttempt);
     state.reconnectAttempt += 1;
-    setWsStatus(`重连中 ${Math.ceil(delay / 1000)}s`, "warn");
+    setWsStatus(`Reconnecting in ${Math.ceil(delay / 1000)}s`, "warn");
 
     state.reconnectTimer = window.setTimeout(() => {
       state.reconnectTimer = null;
@@ -459,7 +475,7 @@ export function mount(container, { components }) {
 
     const wsUrl = getWebSocketUrl();
     wsEndpoint.textContent = `WebSocket: ${wsUrl}`;
-    setWsStatus("连接中", "warn");
+    setWsStatus("Connecting", "warn");
 
     const socket = new WebSocket(wsUrl);
     state.socket = socket;
@@ -469,8 +485,8 @@ export function mount(container, { components }) {
         return;
       }
       state.reconnectAttempt = 0;
-      setWsStatus("已连接", "success");
-      pushLog("WebSocket 已连接，等待A/B配对帧与moduleC输出");
+      setWsStatus("Connected", "success");
+      pushLog("WebSocket connected. Waiting for A/B paired frames and moduleC output");
     });
 
     socket.addEventListener("message", (event) => {
@@ -482,7 +498,7 @@ export function mount(container, { components }) {
       try {
         payload = JSON.parse(event.data);
       } catch (_err) {
-        pushLog("收到非JSON消息，已忽略");
+        pushLog("Received non-JSON message; ignored");
         return;
       }
 
@@ -509,7 +525,7 @@ export function mount(container, { components }) {
       }
       if (evt === "status") {
         const status = payload?.status ?? "status";
-        const message = payload?.message ?? "状态更新";
+        const message = payload?.message ?? "Status update";
         pushLog(`[bridge][${status}] ${message}`);
       }
     });
@@ -518,15 +534,15 @@ export function mount(container, { components }) {
       if (state.destroyed) {
         return;
       }
-      pushLog("WebSocket 发生错误");
+      pushLog("WebSocket error");
     });
 
     socket.addEventListener("close", () => {
       if (state.destroyed) {
         return;
       }
-      setWsStatus("已断开", "danger");
-      pushLog("WebSocket 已断开，准备自动重连");
+      setWsStatus("Disconnected", "danger");
+      pushLog("WebSocket disconnected. Reconnecting automatically");
       scheduleReconnect();
     });
   }
@@ -543,12 +559,12 @@ export function mount(container, { components }) {
       }
       const payload = await response.json().catch(() => ({}));
       if (payload?.ok === false) {
-        throw new Error(payload?.error || "切换失败");
+        throw new Error(payload?.error || "Switch failed");
       }
-      pushLog("已将 moduleB 切换到 ZMQ 输入模式");
+      pushLog("Switched moduleB to ZMQ input mode");
     } catch (error) {
-      console.warn("[fullflow] 切换 moduleB 到 ZMQ 模式失败:", error);
-      pushLog(`moduleB模式回切失败: ${error?.message ?? "unknown error"}`);
+      console.warn("[fullflow] Failed to switch moduleB to ZMQ mode:", error);
+      pushLog(`moduleB mode switch-back failed: ${error?.message ?? "unknown error"}`);
     }
   }
 
@@ -564,12 +580,12 @@ export function mount(container, { components }) {
       }
       const payload = await response.json().catch(() => ({}));
       if (payload?.ok === false) {
-        throw new Error(payload?.error || "切换失败");
+        throw new Error(payload?.error || "Switch failed");
       }
-      pushLog("已将 moduleD 切换到 ZMQ 输入模式");
+      pushLog("Switched moduleD to ZMQ input mode");
     } catch (error) {
-      console.warn("[fullflow] 切换 moduleD 到 ZMQ 模式失败:", error);
-      pushLog(`moduleD模式回切失败: ${error?.message ?? "unknown error"}`);
+      console.warn("[fullflow] Failed to switch moduleD to ZMQ mode:", error);
+      pushLog(`moduleD mode switch-back failed: ${error?.message ?? "unknown error"}`);
     }
   }
 

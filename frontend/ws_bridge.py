@@ -513,7 +513,7 @@ class ABWsBridge:
                     {
                         "event": "status",
                         "status": "connected",
-                        "message": "已连接实时桥接服务",
+                        "message": "Connected to the live bridge service",
                         "ts": time.time(),
                     },
                     ensure_ascii=False,
@@ -532,11 +532,11 @@ class ABWsBridge:
 
     async def run(self) -> None:
         logging.info("WebSocket服务启动: ws://%s:%d", self.args.ws_host, self.args.ws_port)
-        await self._send_status("starting", "桥接服务正在启动")
+        await self._send_status("starting", "Bridge service is starting")
 
         async with serve(self.ws_handler, self.args.ws_host, self.args.ws_port):
             zmq_task = asyncio.create_task(self._zmq_loop())
-            await self._send_status("running", "桥接服务已启动")
+            await self._send_status("running", "Bridge service is running")
             await self.stop_event.wait()
 
             zmq_task.cancel()
@@ -545,7 +545,7 @@ class ABWsBridge:
             except asyncio.CancelledError:
                 pass
 
-        await self._send_status("stopped", "桥接服务已停止")
+        await self._send_status("stopped", "Bridge service has stopped")
 
 
 async def async_main() -> None:

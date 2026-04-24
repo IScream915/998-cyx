@@ -1,22 +1,22 @@
 const FALLBACK_TEMPLATES = [
   {
     template_id: "p0_blind_spot",
-    label: "P0盲区高危",
+    label: "P0 Blind Spot Critical",
     defaults: { scene: "city street", speed: 38, limit_speed: 60, num_pedestrians: 1, num_vehicles: 4 },
   },
   {
     template_id: "p1_overspeed",
-    label: "P1超速提醒",
+    label: "P1 Overspeed Reminder",
     defaults: { scene: "highway", speed: 98, limit_speed: 80, num_pedestrians: 0, num_vehicles: 10 },
   },
   {
     template_id: "p2_warning",
-    label: "P2普通预警",
+    label: "P2 General Warning",
     defaults: { scene: "city street", speed: 46, limit_speed: 60, num_pedestrians: 2, num_vehicles: 7 },
   },
   {
     template_id: "p3_silent",
-    label: "P3静默建议",
+    label: "P3 Silent Advisory",
     defaults: { scene: "highway", speed: 78, limit_speed: 80, num_pedestrians: 0, num_vehicles: 6 },
   },
 ];
@@ -26,6 +26,52 @@ const SPEED_OPTIONS = [20, 30, 38, 40, 46, 50, 60, 70, 78, 80, 90, 98, 100, 110,
 const LIMIT_OPTIONS = [20, 40, 60, 80, 100, 120];
 const PEDESTRIAN_OPTIONS = [0, 1, 2, 3, 4, 5, 6];
 const VEHICLE_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16];
+const DISPLAY_TEXT_MAP = new Map([
+  ["P0\u76f2\u533a\u9ad8\u5371", "P0 Blind Spot Critical"],
+  ["P1\u8d85\u901f\u63d0\u9192", "P1 Overspeed Reminder"],
+  ["P2\u666e\u901a\u9884\u8b66", "P2 General Warning"],
+  ["P3\u9759\u9ed8\u5efa\u8bae", "P3 Silent Advisory"],
+  ["\u524d\u65b9\u9650\u901f\u4e8c\u5341\uff0c\u8bf7\u6ce8\u610f\u51cf\u901f", "Speed limit 20 ahead. Please slow down."],
+  ["\u524d\u65b9\u9650\u901f\u56db\u5341\u516c\u91cc", "Speed limit 40 km/h ahead."],
+  ["\u524d\u65b9\u9650\u901f\u516d\u5341\u516c\u91cc", "Speed limit 60 km/h ahead."],
+  ["\u524d\u65b9\u9650\u901f\u516b\u5341\u516c\u91cc", "Speed limit 80 km/h ahead."],
+  ["\u524d\u65b9\u9650\u901f\u4e00\u767e\u516c\u91cc", "Speed limit 100 km/h ahead."],
+  ["\u524d\u65b9\u9650\u901f\u4e00\u767e\u4e8c\u5341\u516c\u91cc", "Speed limit 120 km/h ahead."],
+  ["\u524d\u65b9\u9650\u901f40\u516c\u91cc\uff0c\u8bf7\u51cf\u901f\u6162\u884c", "Speed limit 40 km/h ahead. Please slow down."],
+  ["\u60a8\u5df2\u8d85\u901f\uff0c\u5f53\u524d\u9650\u901f80\u516c\u91cc", "You are speeding. Current speed limit is 80 km/h."],
+  ["\u96a7\u9053\u8def\u6bb5\u8bf7\u964d\u901f\uff0c\u5f53\u524d\u9650\u901f60\u516c\u91cc", "Slow down in the tunnel segment. Current speed limit is 60 km/h."],
+  ["\u524d\u65b9\u6ce8\u610f\u884c\u4eba\uff0c\u8bf7\u968f\u65f6\u51c6\u5907\u5239\u8f66", "Pedestrians ahead. Be prepared to brake."],
+  ["\u524d\u65b9\u4eba\u884c\u6a2a\u9053\uff0c\u8bf7\u793c\u8ba9\u884c\u4eba", "Pedestrian crossing ahead. Yield to pedestrians."],
+  ["\u524d\u65b9\u5b66\u6821\u6216\u513f\u7ae5\u6d3b\u52a8\u533a\u57df\uff0c\u8bf7\u51cf\u901f\u907f\u8ba9", "School or children activity area ahead. Slow down and yield."],
+  ["\u6ce8\u610f\uff0c\u524d\u65b9\u9053\u8def\u65bd\u5de5\uff0c\u8bf7\u51cf\u901f\u6162\u884c", "Roadwork ahead. Slow down."],
+  ["\u524d\u65b9\u8fde\u7eed\u5f2f\u9053\uff0c\u8bf7\u63a7\u5236\u8f66\u901f\uff0c\u6ce8\u610f\u5b89\u5168", "Winding road ahead. Control speed and stay alert."],
+  ["\u524d\u65b9\u4e3a\u4e8b\u6545\u6613\u53d1\u8def\u6bb5\uff0c\u8bf7\u8c28\u614e\u9a7e\u9a76", "Accident-prone section ahead. Drive carefully."],
+  ["\u524d\u65b9\u8def\u51b5\u590d\u6742\uff0c\u8bf7\u6ce8\u610f\u5371\u9669", "Complex road conditions ahead. Watch for hazards."],
+  ["\u524d\u65b9\u5c71\u533a\u9053\u8def\uff0c\u8bf7\u6ce8\u610f\u843d\u77f3", "Mountain road ahead. Watch for falling rocks."],
+  ["\u524d\u65b9\u6ce8\u610f\u6a2a\u98ce\uff0c\u8bf7\u7d27\u63e1\u65b9\u5411\u76d8", "Crosswind ahead. Keep a firm grip on the steering wheel."],
+  ["\u8b66\u544a\uff0c\u524d\u65b9\u7981\u6b62\u8f66\u8f86\u9a76\u5165", "Warning: vehicles are prohibited from entering ahead."],
+  ["\u8be5\u8def\u53e3\u7981\u6b62\u6389\u5934", "No U-turn at this intersection."],
+  ["\u8be5\u8def\u6bb5\u7981\u6b62\u8d85\u8f66\uff0c\u8bf7\u4fdd\u6301\u8f66\u9053", "No overtaking on this section. Keep your lane."],
+  ["\u524d\u65b9\u7981\u6b62\u8d85\u8f66\uff0c\u8bf7\u4fdd\u6301\u8f66\u8ddd", "No overtaking ahead. Keep a safe following distance."],
+  ["\u524d\u65b9\u7981\u6b62\u9e23\u7b1b\uff0c\u8bf7\u6587\u660e\u9a7e\u9a76", "No honking ahead. Drive courteously."],
+  ["\u96a7\u9053\u5185\u7981\u6b62\u9e23\u7b1b\uff0c\u8bf7\u5e73\u7a33\u9a7e\u9a76", "No honking in the tunnel. Drive smoothly."],
+  ["\u8be5\u8def\u6bb5\u5168\u7ebf\u7981\u6b62\u505c\u8f66", "No parking along this section."],
+  ["\u524d\u65b9\u8def\u53e3\u7981\u6b62\u5de6\u8f6c\u5f2f", "No left turn ahead."],
+  ["\u524d\u65b9\u8def\u53e3\u7981\u6b62\u53f3\u8f6c\u5f2f", "No right turn ahead."],
+  ["\u524d\u65b9\u8def\u53e3\uff0c\u8bf7\u505c\u8f66\u89c2\u5bdf\uff0c\u8ba9\u884c\u4e3b\u8def\u8f66\u8f86", "Stop ahead. Check traffic and yield to main-road vehicles."],
+  ["\u524d\u65b9\u8def\u53e3\uff0c\u8bf7\u51cf\u901f\u8ba9\u884c", "Yield ahead. Slow down."],
+  ["\u4fdd\u6301\u5f53\u524d\u8f66\u901f\uff0c\u6ce8\u610f\u524d\u65b9\u8f66\u6d41", "Maintain current speed and watch the traffic ahead."],
+  ["\u8f66\u901f\u6062\u590d\u6b63\u5e38\uff0c\u8bf7\u7ee7\u7eed\u4fdd\u6301\u4e13\u6ce8\u9a7e\u9a76", "Speed is back to normal. Stay focused while driving."],
+  ["\u8f66\u901f\u6062\u590d\u6b63\u5e38", "Speed is back to normal."],
+  ["\u5373\u5c06\u9a76\u51fa\u96a7\u9053\uff0c\u8bf7\u5173\u6ce8\u5149\u7ebf\u53d8\u5316", "Approaching tunnel exit. Watch for lighting changes."],
+]);
+
+function toDisplayText(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+  return DISPLAY_TEXT_MAP.get(value) ?? value;
+}
 
 function toNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -74,15 +120,15 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">模块E独立展示</h3>
-            <p class="card-subtitle">仿真上游输入触发 moduleE 仲裁与播报</p>
+            <h3 class="card-title">Module E Standalone Demo</h3>
+            <p class="card-subtitle">Simulated upstream input triggers moduleE arbitration and announcements</p>
           </div>
-          <span id="module-e-gateway-badge" class="badge warn">连接中</span>
+          <span id="module-e-gateway-badge" class="badge warn">Connecting</span>
         </header>
         <div class="card-body">
           <div class="module-e-form-grid">
             <label class="module-e-field">
-              <span class="card-subtitle">触发模板</span>
+              <span class="card-subtitle">Trigger Template</span>
               <select id="module-e-template" class="select"></select>
             </label>
             <label class="module-e-field">
@@ -107,8 +153,8 @@ export function mount(container, { components }) {
             </label>
           </div>
           <div class="btn-row module-e-actions">
-            <button id="module-e-trigger" class="btn is-primary" type="button">触发一次</button>
-            <button id="module-e-reset" class="btn" type="button">重置状态</button>
+            <button id="module-e-trigger" class="btn is-primary" type="button">Trigger Once</button>
+            <button id="module-e-reset" class="btn" type="button">Reset State</button>
           </div>
         </div>
       </article>
@@ -117,7 +163,7 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">最近输入</h3>
+              <h3 class="card-title">Latest Input</h3>
               <p class="card-subtitle">POST /api/module-e/simulate</p>
             </div>
           </header>
@@ -129,8 +175,8 @@ export function mount(container, { components }) {
         <article class="card">
           <header class="card-head">
             <div>
-              <h3 class="card-title">最近输出</h3>
-              <p class="card-subtitle">来自 /api/module-e/ws e_frame</p>
+              <h3 class="card-title">Latest Output</h3>
+              <p class="card-subtitle">From /api/module-e/ws e_frame</p>
             </div>
           </header>
           <div class="card-body">
@@ -142,7 +188,7 @@ export function mount(container, { components }) {
       <article class="card">
         <header class="card-head">
           <div>
-            <h3 class="card-title">网关状态与日志</h3>
+            <h3 class="card-title">Gateway Status and Logs</h3>
           </div>
         </header>
         <div class="card-body module-e-bottom">
@@ -204,7 +250,7 @@ export function mount(container, { components }) {
     for (const item of state.templates) {
       const option = document.createElement("option");
       option.value = item.template_id;
-      option.textContent = `${item.label} (${item.template_id})`;
+      option.textContent = `${toDisplayText(item.label)} (${item.template_id})`;
       templateSelect.appendChild(option);
     }
     if (!templateSelect.value && state.templates[0]) {
@@ -286,7 +332,7 @@ export function mount(container, { components }) {
     const decision = moduleE?.decision && typeof moduleE.decision === "object" ? moduleE.decision : {};
     const status = typeof moduleE.status === "string" ? moduleE.status : "unknown";
     const decisionCode = typeof decision.decision_code === "string" ? decision.decision_code : "-";
-    const voicePrompt = typeof decision.voice_prompt === "string" ? decision.voice_prompt : "-";
+    const voicePrompt = typeof decision.voice_prompt === "string" ? toDisplayText(decision.voice_prompt) : "-";
     const priority = decision.priority === null || decision.priority === undefined ? "-" : String(decision.priority);
     const speak = decision.speak === true ? "true" : decision.speak === false ? "false" : "-";
     let statusTone = "";
@@ -386,11 +432,11 @@ export function mount(container, { components }) {
           applyTemplateDefaults();
         }
       }
-      setGatewayBadge("已连接", "success");
+      setGatewayBadge("Connected", "success");
       state.lastGatewayError = "";
     } catch (error) {
-      setGatewayBadge("网关异常", "danger");
-      const message = `网关状态获取失败: ${error?.message ?? "unknown error"}`;
+      setGatewayBadge("Gateway Error", "danger");
+      const message = `Failed to fetch gateway state: ${error?.message ?? "unknown error"}`;
       if (state.lastGatewayError !== message) {
         state.lastGatewayError = message;
         appendLog(message, "danger");
@@ -413,11 +459,11 @@ export function mount(container, { components }) {
       state.lastInput = payload;
       renderInput(state.lastInput);
       appendLog(
-        `已触发 template=${payload.template_id} frame_id=${payload.frame_id} scene=${payload?.params?.scene ?? "-"}`,
+        `Triggered template=${payload.template_id} frame_id=${payload.frame_id} scene=${payload?.params?.scene ?? "-"}`,
         "success",
       );
     } catch (error) {
-      appendLog(`触发失败: ${error?.message ?? "unknown error"}`, "danger");
+      appendLog(`Trigger failed: ${error?.message ?? "unknown error"}`, "danger");
     } finally {
       triggerBtn.disabled = false;
     }
@@ -433,7 +479,7 @@ export function mount(container, { components }) {
       clearDisplayQueue();
       await refreshGatewayState();
     } catch (error) {
-      appendLog(`重置失败: ${error?.message ?? "unknown error"}`, "danger");
+      appendLog(`Reset failed: ${error?.message ?? "unknown error"}`, "danger");
     } finally {
       resetBtn.disabled = false;
     }
@@ -449,7 +495,7 @@ export function mount(container, { components }) {
     }
     const delay = Math.min(10000, 1000 * 2 ** state.reconnectAttempt);
     state.reconnectAttempt += 1;
-    setGatewayBadge(`WS重连 ${Math.ceil(delay / 1000)}s`, "warn");
+    setGatewayBadge(`WS reconnecting in ${Math.ceil(delay / 1000)}s`, "warn");
     state.reconnectTimer = window.setTimeout(() => {
       state.reconnectTimer = null;
       connectWebSocket();
@@ -460,7 +506,7 @@ export function mount(container, { components }) {
     if (state.destroyed) {
       return;
     }
-    setGatewayBadge("WS连接中", "warn");
+    setGatewayBadge("WS Connecting", "warn");
     const socket = new WebSocket(getWsUrl());
     state.socket = socket;
 
@@ -469,8 +515,8 @@ export function mount(container, { components }) {
         return;
       }
       state.reconnectAttempt = 0;
-      setGatewayBadge("已连接", "success");
-      appendLog("moduleE仿真WebSocket已连接");
+      setGatewayBadge("Connected", "success");
+      appendLog("moduleE simulation WebSocket connected");
     });
 
     socket.addEventListener("message", (event) => {
@@ -481,13 +527,13 @@ export function mount(container, { components }) {
       try {
         payload = JSON.parse(event.data);
       } catch (_err) {
-        appendLog("收到非JSON消息，已忽略", "danger");
+        appendLog("Received non-JSON message; ignored", "danger");
         return;
       }
       if (payload?.event === "e_frame") {
         renderOutput(payload);
         const code = payload?.moduleE?.decision?.decision_code ?? "-";
-        appendLog(`接收e_frame frame_id=${payload?.frame_id ?? "-"} decision=${code}`);
+        appendLog(`Received e_frame frame_id=${payload?.frame_id ?? "-"} decision=${code}`);
       }
     });
 
@@ -495,14 +541,14 @@ export function mount(container, { components }) {
       if (state.destroyed) {
         return;
       }
-      appendLog("WebSocket 出现错误", "danger");
+      appendLog("WebSocket error", "danger");
     });
 
     socket.addEventListener("close", () => {
       if (state.destroyed) {
         return;
       }
-      appendLog("WebSocket 已断开，准备重连", "warn");
+      appendLog("WebSocket disconnected. Reconnecting", "warn");
       scheduleReconnect();
     });
   }

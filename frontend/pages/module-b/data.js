@@ -13,10 +13,10 @@ export const MODULE_B_SCENARIOS = FULLFLOW_SCENARIOS.map((scenario) => ({
     conference: entry.moduleB.conference,
     speed: entry.moduleB.speed,
     log: [
-      `moduleB 接收 frame_id=${entry.moduleB.frame_id}`,
-      `场景识别结果: ${entry.moduleB.scene}`,
-      `置信度: ${(entry.moduleB.confidence * 100).toFixed(1)}%`,
-      `速度估计: ${entry.moduleB.speed} km/h`,
+      `moduleB received frame_id=${entry.moduleB.frame_id}`,
+      `Scene classification: ${entry.moduleB.scene}`,
+      `Confidence: ${(entry.moduleB.confidence * 100).toFixed(1)}%`,
+      `Speed estimate: ${entry.moduleB.speed} km/h`,
     ],
   })),
 }));
